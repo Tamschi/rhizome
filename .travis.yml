@@ -11,6 +11,7 @@ stages:
 script:
   - cargo +$TRAVIS_RUST_VERSION test --verbose
   - cargo +$TRAVIS_RUST_VERSION test --verbose --features macros
+  - cd proc-macro-definitions && cargo +$TRAVIS_RUST_VERSION test --verbose && cd ..
   jobs:
   include:
     - stage: ensure format
