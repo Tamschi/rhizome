@@ -20,10 +20,9 @@ include = [
 	"LICENSE-*",
 	"README.md",
 ]
-publish = false
 
 [badges]
-travis-ci = { repository = "Tamschi/rhizome", branch = "develop" }
+travis-ci = { repository = "Tamschi/rhizome", branch = "unstable" }
 is-it-maintained-issue-resolution = { repository = "Tamschi/rhizome" }
 is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
 maintenance = { status = "experimental" }
