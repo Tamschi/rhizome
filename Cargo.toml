@@ -32,7 +32,7 @@ maintenance = { status = "experimental" }
 macros = ["rhizome_proc-macro-definitions"]
 
 [dependencies]
-mapped-guard = { path = "../mapped-guard" } #public
+mapped-guard = "0.0.1" #public
 rhizome_proc-macro-definitions = { path = "proc-macro-definitions", optional = true } #public
 
 [dev-dependencies]
