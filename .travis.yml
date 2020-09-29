@@ -25,6 +25,7 @@ jobs:
         - rustup component add clippy
         - RUSTFLAGS='-D warnings' cargo build --all-targets
         - RUSTFLAGS='-D warnings' cargo build --all-targets --features macros
+        - cd proc-macro-definitions && RUSTFLAGS='-D warnings' cargo build --all-targets && cd ..
   allow_failures:
     - rust: nightly
   fast_finish: true

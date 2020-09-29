@@ -1,5 +1,7 @@
 #![doc(html_root_url = "https://docs.rs/rhizome_proc-macro-definitions/0.0.1")]
 #![forbid(unsafe_code)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::too_many_lines)]
 
 extern crate proc_macro;
 
