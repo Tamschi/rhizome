@@ -1,0 +1,42 @@
+[package]
+name = "rhizome"
+version = "0.0.1"
+authors = ["Tamme Schichler <tamme@schichler.dev>"]
+edition = "2018"
+description = "A convenient hierarchical dependency-extraction container. Supports lazy provision, shadowing and testing/configuration use cases."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Tamschi/rhizome"
+homepage = "https://github.com/Tamschi/rhizome/tree/v0.0.1"
+documentation = "https://docs.rs/rhizome/0.0.1"
+keywords = ["inversion-of-control", "dependency-extraction", "IoC", "DI"]
+categories = ["data-structures", "config"]
+readme = "README.md"
+include = [
+	"**/*.rs",
+	"!tests/unincluded_*.rs", # Tests of meta data files not included in the package.
+	"Cargo.toml",
+	"CHANGELOG.md",
+	"CODE_OF_CONDUCT.md",
+	"LICENSE-*",
+	"README.md",
+]
+publish = false
+
+[badges]
+travis-ci = { repository = "Tamschi/rhizome", branch = "develop" }
+is-it-maintained-issue-resolution = { repository = "Tamschi/rhizome" }
+is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
+maintenance = { status = "experimental" }
+
+[features]
+macros = ["rhizome_proc-macro-definitions"]
+
+[dependencies]
+mapped-guard = { path = "../mapped-guard" } #public
+rhizome_proc-macro-definitions = { path = "proc-macro-definitions", optional = true } #public
+
+[dev-dependencies]
+cargo-husky = "1.5.0"
+doc-comment = "0.3.3"
+git_info = "0.1.2"
+version-sync = "0.9.1"
