@@ -64,7 +64,7 @@ impl<V, K: Eq + Hash, T> Node<V, K, T> {
 		Self {
 			parent: None,
 			tag,
-			local_scope: Default::default(),
+			local_scope: RwLock::default(),
 		}
 	}
 
