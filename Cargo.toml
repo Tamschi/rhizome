@@ -38,4 +38,5 @@ rhizome_proc-macro-definitions = { version = "0.0.1", optional = true } #public
 cargo-husky = "1.5.0"
 doc-comment = "0.3.3"
 git_info = "0.1.2"
+toml = "0.5.2" # Workaround for dependencies bug in 0.5.0-1. SEE: https://github.com/alexcrichton/toml-rs/issues/412
 version-sync = "0.9.1"
