@@ -1,0 +1,8 @@
+[workspace]
+members = [
+	".",
+	"proc-macro-definitions",
+]
+
+[patch.crates-io]
+rhizome_proc-macro-definitions = { path = "proc-macro-definitions" }
