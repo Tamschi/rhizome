@@ -18,7 +18,7 @@ proc-macro = true
 [dependencies]
 lazy_static = "1.4.0"
 quote = "1.0.2"
-proc-macro-crate = "0.1.4"
+proc-macro-crate = "0.1.5"
 proc-macro2 = "1.0.7"
 syn-mid = "0.5.0"
 
