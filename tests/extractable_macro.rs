@@ -22,21 +22,21 @@ fn test_extractable() {
 	let mut branch = root.derive_for::<Owner>();
 
 	assert_eq!(
-		Extractable::extract_from(&branch).unwrap().type_id(),
+		<dyn Extractable>::extract_from(&branch).unwrap().type_id(),
 		TypeId::of::<ExtractableImpl>()
 	);
 	assert_eq!(
-		Extractable::extract_from(&root).unwrap().type_id(),
+		<dyn Extractable>::extract_from(&root).unwrap().type_id(),
 		TypeId::of::<ExtractableImpl>()
 	);
 
-	Extractable::provide_custom(&mut branch, Fake {}).unwrap();
+	<dyn Extractable>::provide_custom(&mut branch, Fake {}).unwrap();
 	assert_eq!(
-		Extractable::extract_from(&branch).unwrap().type_id(),
+		<dyn Extractable>::extract_from(&branch).unwrap().type_id(),
 		TypeId::of::<Fake>()
 	);
 	assert_eq!(
-		Extractable::extract_from(&root).unwrap().type_id(),
+		<dyn Extractable>::extract_from(&root).unwrap().type_id(),
 		TypeId::of::<ExtractableImpl>()
 	);
 }

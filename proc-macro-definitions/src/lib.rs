@@ -17,9 +17,7 @@ use syn::{parse_macro_input, Ident};
 #[proc_macro]
 pub fn extractable(input: TokenStream1) -> TokenStream1 {
 	let extractable_declaration = parse_macro_input!(input as ExtractableDeclaration);
-	let tokens: TokenStream2 = extractable_declaration
-		.into_tokens()
-		.unwrap_or_else(|error| error.to_compile_error());
+	let tokens: TokenStream2 = extractable_declaration.into_tokens();
 	tokens.into()
 }
 

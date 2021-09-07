@@ -73,6 +73,7 @@ impl<V, K: Eq + Hash, T> Node<V, K, T> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
+	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
 	pub fn provide(&mut self, key: K, value: V) -> Result<(), V> {
 		let mut lock = self.local_scope.write().unwrap();
 		if lock.contains_key(&key) {
@@ -122,6 +123,7 @@ impl<V, K: Clone + Eq + Hash, T: PartialEq> Node<V, K, T> {
 	/// # Errors
 	///
 	/// Iff no value could be extracted.
+	#[allow(clippy::missing_panics_doc)] // TODO: Validate this isn't possible, then clean up potential panic sites.
 	pub fn extract<E: stdError + 'static>(
 		&self,
 		key: &K,
@@ -159,11 +161,11 @@ impl<V, K: Clone + Eq + Hash, T: PartialEq> Node<V, K, T> {
 
 			match (&provision, &current.parent) {
 				(Provision::At(Location::Tagged(tag), factory), _) if self.tag == *tag => {
-					insert(current, key.clone(), *factory)?
+					insert(current, key.clone(), *factory)?;
 				}
 				(_, Some(parent)) => current = parent,
 				(Provision::At(Location::Root, factory), None) => {
-					insert(current, key.clone(), *factory)?
+					insert(current, key.clone(), *factory)?;
 				}
 				(Provision::Never, None) => return Err(Error::NoDefault),
 				(Provision::At(_, _), None) => return Err(Error::NoTagMatched),

@@ -196,7 +196,7 @@ impl Parse for ExtractableDeclaration {
 							#(let #async_refs = self.#async_refs.clone();)*
 							Box::new(#async_token move #block)
 						}
-					})
+					});
 				} else {
 					trait_body.push(quote! {
 						#vis // This will just make it fail if any explicit visibility is given.
@@ -250,8 +250,8 @@ impl Parse for ExtractableDeclaration {
 		Ok(Self {
 			attributes,
 			visibility,
-			name,
 			abstract_token,
+			name,
 			debug,
 			send,
 			sync,
@@ -266,7 +266,7 @@ impl Parse for ExtractableDeclaration {
 }
 
 impl ExtractableDeclaration {
-	pub fn into_tokens(self) -> Result<TokenStream> {
+	pub fn into_tokens(self) -> TokenStream {
 		let Self {
 			attributes,
 			visibility,
@@ -339,7 +339,7 @@ impl ExtractableDeclaration {
 			}
 		};
 
-		Ok(quote! {
+		quote! {
 			#(#attributes)*
 			#visibility trait #name: core::any::Any #debug #send #sync {
 				#(#trait_body)*
@@ -391,6 +391,6 @@ impl ExtractableDeclaration {
 					#provision
 				}
 			}
-		})
+		}
 	}
 }

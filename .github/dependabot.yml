@@ -4,9 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    # versioning-strategy: "increase-if-necessary" # Not yet supported. See <https://github.com/dependabot/dependabot-core/issues/4009>.
     assignees:
-      - "Tamschi"
-    reviewers:
       - "Tamschi"
   - package-ecosystem: "cargo"
     directory: "/proc-macro-definitions"
@@ -14,13 +13,9 @@ updates:
       interval: "daily"
     assignees:
       - "Tamschi"
-    reviewers:
-      - "Tamschi"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
     assignees:
-      - "Tamschi"
-    reviewers:
       - "Tamschi"

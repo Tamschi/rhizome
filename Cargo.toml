@@ -1,3 +1,12 @@
+[workspace]
+members = [
+	".",
+	"proc-macro-definitions",
+]
+
+[patch.crates-io]
+rhizome_proc-macro-definitions = { path = "proc-macro-definitions" }
+
 [package]
 name = "rhizome"
 version = "0.0.1"
@@ -19,13 +28,15 @@ include = [
 	"CODE_OF_CONDUCT.md",
 	"LICENSE-*",
 	"README.md",
+	"SECURITY.md",
 ]
+resolver = "2"
 publish = false
 
 [badges]
 is-it-maintained-issue-resolution = { repository = "Tamschi/rhizome" }
 is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
-maintenance = { status = "experimental" }
+maintenance = { status = "experimental" } # This may differ between branches.
 
 [features]
 macros = ["rhizome_proc-macro-definitions"]
@@ -39,3 +50,4 @@ cargo-husky = "1.5.0"
 doc-comment = "0.3.3"
 git_info = "0.1.2"
 version-sync = "0.9.1"
+wasm-bindgen-test = "0.3.26"
