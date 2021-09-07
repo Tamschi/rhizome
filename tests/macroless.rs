@@ -10,8 +10,8 @@ type V = RefCell<u8>;
 #[test]
 fn shared_at_root() {
 	let root = Node::<V>::new_for::<RootOwner>().into_arc();
-	let branch_a = root.derive_for::<AOwner>();
-	let branch_b = root.derive_for::<BOwner>();
+	let branch_a = root.branch_for_type::<AOwner>();
+	let branch_b = root.branch_for_type::<BOwner>();
 
 	*branch_a.extract_with::<K, _>().unwrap().borrow_mut() += 1;
 	assert_eq!(*branch_b.extract_with::<K, _>().unwrap().borrow(), 1);
@@ -20,8 +20,8 @@ fn shared_at_root() {
 #[test]
 fn only_at_a() {
 	let root = Node::<V>::new_for::<RootOwner>().into_arc();
-	let branch_a = root.derive_for::<AOwner>();
-	let branch_b = root.derive_for::<BOwner>();
+	let branch_a = root.branch_for_type::<AOwner>();
+	let branch_b = root.branch_for_type::<BOwner>();
 
 	assert_eq!(*branch_a.extract_with::<KA, _>().unwrap().borrow(), 0);
 	assert_eq!(
@@ -33,8 +33,8 @@ fn only_at_a() {
 #[test]
 fn not_shared() {
 	let root = Node::<V>::new_for::<RootOwner>().into_arc();
-	let branch_a = root.derive_for::<AOwner>();
-	let branch_b = root.derive_for::<AOwner>();
+	let branch_a = root.branch_for_type::<AOwner>();
+	let branch_b = root.branch_for_type::<AOwner>();
 
 	*branch_a.extract_with::<KA, _>().unwrap().borrow_mut() += 1;
 	assert_eq!(*branch_b.extract_with::<KA, _>().unwrap().borrow(), 0);

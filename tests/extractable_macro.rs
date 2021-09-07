@@ -19,7 +19,7 @@ fn test_extractable() {
 	impl Extractable for Fake {}
 
 	let root = Node::new_for::<Owner>().into_arc();
-	let mut branch = root.derive_for::<Owner>();
+	let mut branch = root.branch_for_type::<Owner>();
 
 	assert_eq!(
 		<dyn Extractable>::extract_from(&branch).unwrap().type_id(),

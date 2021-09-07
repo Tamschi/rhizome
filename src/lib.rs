@@ -1,18 +1,11 @@
+//! Convenient hierarchical dependency-extraction containers, implemented as reverse trees.
+//!
+//! This is a data structure that can be used to implement an inversion of control pattern and a Rust-compatible equivalent of dependency-injection,
+//! to enable lazy resource provision, resource shadowing and testing/configuration use cases.
+
 #![forbid(unsafe_code)]
 #![doc(html_root_url = "https://docs.rs/rhizome/0.0.1")]
-#![warn(clippy::pedantic)]
-
-use self::error::Error;
-use core::{
-	any::{Any, TypeId},
-	hash::Hash,
-};
-use mapped_guard::{MapGuard as _, MappedGuard};
-use std::{
-	collections::{hash_map::Entry, HashMap},
-	error::Error as stdError,
-	sync::{Arc, RwLock, RwLockReadGuard},
-};
+#![warn(clippy::pedantic, missing_docs)]
 
 #[cfg(doctest)]
 pub mod readme {
@@ -24,39 +17,67 @@ pub mod error;
 #[cfg(feature = "macros")]
 pub use rhizome_proc_macro_definitions::extractable;
 
+use crate::error::Error;
+use core::{
+	any::{Any, TypeId},
+	hash::Hash,
+};
+use mapped_guard::{MapGuard as _, MappedGuard};
+use std::{
+	collections::{hash_map::Entry, HashMap},
+	error::Error as stdError,
+	sync::{Arc, RwLock, RwLockReadGuard},
+};
+
+/// Extension methods for [`Arc<Node<Value, Key, Tag>>`].
 pub mod extensions {
 	use std::sync::RwLock;
 
 	use super::{Arc, Hash, Node, TypeId};
 
-	pub trait NodeArc<V, K, T> {
-		fn derive(&self, tag: T) -> Node<V, K, T>;
+	/// Provides the [`.branch_for`](`BranchFor::branch_for`) method.
+	pub trait BranchFor<Value, Key, Tag> {
+		/// Creates a new [`Node`] instance referencing the current one.
+		fn branch_for(&self, tag: Tag) -> Node<Value, Key, Tag>;
+		/// Creates a new [`Node`] instance referencing the current one, without cloning this [`Arc`].
+		fn into_branch_for(self, tag: Tag) -> Node<Value, Key, Tag>;
 	}
-	impl<V, K: Eq + Hash, T> NodeArc<V, K, T> for Arc<Node<V, K, T>> {
-		fn derive(&self, tag: T) -> Node<V, K, T> {
+	impl<Value, Key: Eq + Hash, Tag> BranchFor<Value, Key, Tag> for Arc<Node<Value, Key, Tag>> {
+		fn branch_for(&self, tag: Tag) -> Node<Value, Key, Tag> {
+			Arc::clone(self).into_branch_for(tag)
+		}
+		fn into_branch_for(self, tag: Tag) -> Node<Value, Key, Tag> {
 			Node {
-				parent: Some(self.clone()),
+				parent: Some(self),
 				tag,
 				local_scope: RwLock::default(),
 			}
 		}
 	}
 
-	pub trait TypeTaggedNodeArc<V, K> {
-		fn derive_for<Tag: 'static>(&self) -> Node<V, K, TypeId>;
+	/// Provides the [`.branch_for_type`](`BranchForType::branch_for_type`) method.
+	pub trait BranchForType<Value, Key> {
+		/// Creates a new [`Node`] instance referencing the current one, tagged with the [`TypeId`] of `Tag`.
+		fn branch_for_type<Tag: 'static>(&self) -> Node<Value, Key, TypeId>;
+		/// Creates a new [`Node`] instance referencing the current one, tagged with the [`TypeId`] of `Tag`, without cloning this [`Arc`].
+		fn into_branch_for_type<Tag: 'static>(self) -> Node<Value, Key, TypeId>;
 	}
-	impl<V, K: Eq + Hash> TypeTaggedNodeArc<V, K> for Arc<Node<V, K, TypeId>> {
+	impl<Value, Key: Eq + Hash> BranchForType<Value, Key> for Arc<Node<Value, Key, TypeId>> {
 		#[inline]
-		fn derive_for<Tag: 'static>(&self) -> Node<V, K, TypeId> {
-			self.derive(TypeId::of::<Tag>())
+		fn branch_for_type<Tag: 'static>(&self) -> Node<Value, Key, TypeId> {
+			self.branch_for(TypeId::of::<Tag>())
+		}
+		#[inline]
+		fn into_branch_for_type<Tag: 'static>(self) -> Node<Value, Key, TypeId> {
+			self.into_branch_for(TypeId::of::<Tag>())
 		}
 	}
 }
 
-pub struct Node<V = Box<dyn Any>, K = TypeId, T = TypeId> {
-	parent: Option<Arc<Node<V, K, T>>>,
-	tag: T,
-	local_scope: RwLock<HashMap<K, V>>,
+pub struct Node<Value = Box<dyn Any>, Key = TypeId, Tag = TypeId> {
+	parent: Option<Arc<Node<Value, Key, Tag>>>,
+	tag: Tag,
+	local_scope: RwLock<HashMap<Key, Value>>,
 }
 
 impl<V, K: Eq + Hash, T> Node<V, K, T> {
