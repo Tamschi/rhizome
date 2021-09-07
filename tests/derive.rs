@@ -2,8 +2,7 @@
 
 use rhizome::{implement_type_keys, sync::TypeKey};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
-use std::fmt::Debug;
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 #[derive(TypeKey)]
 enum Enum {}
