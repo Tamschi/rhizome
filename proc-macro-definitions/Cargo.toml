@@ -23,7 +23,7 @@ proc-macro2 = "1.0.7"
 syn-mid = "0.5.0"
 
 [dependencies.syn]
-version = "1.0.13"
+version = "1.0.76"
 default-features = false
 features = ["derive", "parsing"]
 
