@@ -2,24 +2,24 @@ use core::{
 	cell::RefCell,
 	fmt::{Display, Error as fmtError, Formatter},
 };
-use rhizome::{error::Error, extensions::*, Node, Provision, TypeKey};
+use rhizome::{error::Error, sync::extensions::*, sync::Node, sync::TypeKey};
 use std::error::Error as stdError;
 
 type V = RefCell<u8>;
 
 #[test]
 fn shared_at_root() {
-	let root = Node::<V>::new_for::<RootOwner>().into_arc();
+	let root = Node::<V>::new_for_type::<RootOwner>().into_arc();
 	let branch_a = root.branch_for_type::<AOwner>();
 	let branch_b = root.branch_for_type::<BOwner>();
 
-	*branch_a.extract_with::<K, _>().unwrap().borrow_mut() += 1;
-	assert_eq!(*branch_b.extract_with::<K, _>().unwrap().borrow(), 1);
+	*branch_a.extract_with_type_key::<K>().unwrap().borrow_mut() += 1;
+	assert_eq!(*branch_b.extract_with_type_key::<K>().unwrap().borrow(), 1);
 }
 
 #[test]
 fn only_at_a() {
-	let root = Node::<V>::new_for::<RootOwner>().into_arc();
+	let root = Node::<V>::new_for_type::<RootOwner>().into_arc();
 	let branch_a = root.branch_for_type::<AOwner>();
 	let branch_b = root.branch_for_type::<BOwner>();
 

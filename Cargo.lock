@@ -186,6 +186,7 @@ dependencies = [
  "git_info",
  "mapped-guard",
  "rhizome_proc-macro-definitions",
+ "static_assertions",
  "version-sync",
  "wasm-bindgen-test",
 ]
@@ -221,6 +222,12 @@ name = "serde"
 version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f12d06de37cf59146fbdecab66aa99f9fe4f78722e3607577a5375d66bd0c913"
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "syn"

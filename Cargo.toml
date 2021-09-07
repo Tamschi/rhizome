@@ -44,6 +44,7 @@ macros = ["rhizome_proc-macro-definitions"]
 [dependencies]
 mapped-guard = "0.0.1" #public
 rhizome_proc-macro-definitions = { version = "0.0.1", optional = true } #public
+static_assertions = "1.1.0"
 
 [dev-dependencies]
 cargo-husky = "1.5.0"

@@ -13,6 +13,9 @@ use std::{
 	sync::{Arc, RwLock, RwLockReadGuard},
 };
 
+#[cfg(feature = "macros")]
+pub use crate::TypeKey;
+
 /// Extension methods for [`Arc<Node>`].
 pub mod extensions {
 	use std::sync::RwLock;
