@@ -14,16 +14,19 @@ use lazy_static::lazy_static;
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use proc_macro_crate::{crate_name, FoundCrate};
-use quote::quote_spanned;
+use quote::{quote_spanned, ToTokens};
 use syn::{
 	parse::{Parse, ParseStream},
 	parse_macro_input,
 	punctuated::Punctuated,
-	Error, Generics, Ident, Item, Result, Token,
+	Error, Generics, Ident, Item, Lifetime, PredicateType, Result, Token, Type, TypeParamBound,
+	WhereClause, WherePredicate,
 };
 use tap::Pipe;
 
-/// Automatically implements `TypeKey` for an enum, struct, trait, trail alias, type alias or union.
+/// Automatically implements `TypeKey` for an enum, struct, trait, trait alias, type alias or union.
+///
+/// The implementation is limited by `where Self: 'static`.
 ///
 /// No value is provided.
 #[proc_macro_derive(TypeKey)]
@@ -39,7 +42,28 @@ fn implement_type_key(impl_target: &ImplTarget, rhizome: &Ident) -> TokenStream2
 		ident,
 		generics,
 	} = impl_target;
+
 	let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
+
+	let mut where_clause = where_clause.cloned().unwrap_or_else(|| WhereClause {
+		where_token: Token![where](Span::mixed_site()),
+		predicates: Punctuated::default(),
+	});
+	let predicates = &mut where_clause.predicates;
+	predicates.push(WherePredicate::Type(PredicateType {
+		lifetimes: None,
+		bounded_ty: Type::Verbatim(Token![Self](Span::mixed_site()).into_token_stream()),
+		colon_token: Token![:](Span::mixed_site()),
+		bounds: {
+			let mut bounds = Punctuated::new();
+			bounds.push_value(TypeParamBound::Lifetime(Lifetime {
+				apostrophe: Span::mixed_site(),
+				ident: Ident::new("static", Span::mixed_site()),
+			}));
+			bounds
+		},
+	}));
+
 	quote_spanned! {Span::mixed_site()=>
 		/// No auto-provision.
 		impl#impl_generics ::#rhizome::sync::TypeKey for #dyn_ #ident#type_generics
@@ -51,6 +75,8 @@ fn implement_type_key(impl_target: &ImplTarget, rhizome: &Ident) -> TokenStream2
 }
 
 /// Automatically implements `TypeKey` for an enum, struct, trait, trail alias, type alias or union.
+///
+/// The implementation is limited by `where Self: 'static`.
 ///
 /// No value is provided.
 ///
