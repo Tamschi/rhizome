@@ -16,4 +16,4 @@ pub mod error;
 pub mod sync;
 
 #[cfg(feature = "macros")]
-pub use rhizome_proc_macro_definitions::{extractable, TypeKey, implement_type_keys};
+pub use rhizome_proc_macro_definitions::{extractable, implement_type_keys, TypeKey};

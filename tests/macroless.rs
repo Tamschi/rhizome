@@ -2,7 +2,10 @@ use core::{
 	cell::RefCell,
 	fmt::{Display, Error as fmtError, Formatter},
 };
-use rhizome::{error::Error, sync::extensions::*, sync::Node, sync::TypeKey};
+use rhizome::{
+	error::Error,
+	sync::{extensions::*, Node, TypeKey},
+};
 use std::error::Error as stdError;
 
 type V = RefCell<u8>;
