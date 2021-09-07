@@ -9,7 +9,7 @@ use core::{
 };
 use mapped_guard::{MapGuard as _, MappedGuard};
 use std::{
-	collections::HashMap,
+	collections::{hash_map::Entry, HashMap},
 	error::Error as stdError,
 	sync::{Arc, RwLock, RwLockReadGuard},
 };
@@ -76,11 +76,11 @@ impl<V, K: Eq + Hash, T> Node<V, K, T> {
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
 	pub fn provide(&mut self, key: K, value: V) -> Result<(), V> {
 		let mut lock = self.local_scope.write().unwrap();
-		if lock.contains_key(&key) {
-			Err(value)
-		} else {
-			assert!(lock.insert(key, value).is_none());
+		if let Entry::Vacant(e) = lock.entry(key) {
+			e.insert(value);
 			Ok(())
+		} else {
+			Err(value)
 		}
 	}
 
@@ -138,7 +138,7 @@ impl<V, K: Clone + Eq + Hash, T: PartialEq> Node<V, K, T> {
 					.local_scope
 					.read()
 					.unwrap()
-					.maybe_map_guard(|local_scope| local_scope.get(&key))
+					.maybe_map_guard(|local_scope| local_scope.get(key))
 				{
 					return Ok(guard);
 				}
