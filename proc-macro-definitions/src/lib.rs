@@ -11,7 +11,7 @@ use extractable_declaration::ExtractableDeclaration;
 use lazy_static::lazy_static;
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use proc_macro_crate::crate_name;
+use proc_macro_crate::{crate_name, FoundCrate};
 use syn::{parse_macro_input, Ident};
 
 #[proc_macro]
@@ -22,8 +22,10 @@ pub fn extractable(input: TokenStream1) -> TokenStream1 {
 }
 
 lazy_static! {
-	static ref RHIZOME_NAME: String =
-		crate_name("rhizome").unwrap_or_else(|_| "rhizome".to_owned());
+	static ref RHIZOME_NAME: String = match crate_name("rhizome") {
+		Ok(FoundCrate::Name(name)) => name,
+		Ok(FoundCrate::Itself) | Err(_) => "rhizome".to_owned(),
+	};
 }
 fn rhizome_ident(span: Span) -> Ident {
 	Ident::new(&*RHIZOME_NAME, span)
