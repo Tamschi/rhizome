@@ -22,6 +22,7 @@ proc-macro-crate = "1.0.0"
 proc-macro2 = "1.0.29"
 syn-mid = "0.5.0"
 syn = { version = "1.0.76", features = ["full"] }
+tap = "1.0.1"
 
 [dev-dependencies]
 version-sync = "0.9.1"

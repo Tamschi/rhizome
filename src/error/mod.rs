@@ -2,39 +2,31 @@ use core::fmt::{Debug, Display, Error as fmtError, Formatter};
 use std::error::Error as stdError;
 
 #[derive(Debug)]
-pub enum Error {
+pub struct Error {
+	variant: ErrorVariant,
+}
+
+#[derive(Debug)]
+pub enum ErrorVariant {
 	NoDefault,
-	NoTagMatched,
 	Other(Box<dyn stdError>),
 }
 
 impl stdError for Error {
 	fn source(&self) -> Option<&(dyn stdError + 'static)> {
-		match self {
-			Error::NoDefault | Error::NoTagMatched => None,
-			Error::Other(source) => Some(source.as_ref()),
+		match self.variant {
+			ErrorVariant::NoDefault => None,
+			ErrorVariant::Other(ref source) => Some(source.as_ref()),
 		}
 	}
 }
 impl Display for Error {
 	fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), fmtError> {
-		match self {
-			Error::NoDefault => writeln!(fmt, "Not provided.")?,
-			Error::NoTagMatched => writeln!(fmt, "No matching tag found to default-provide at.")?,
-			Error::Other(o) => write!(fmt, "{:#}", o)?,
+		match self.variant {
+			ErrorVariant::NoDefault => writeln!(fmt, "Not provided.")?,
+			ErrorVariant::Other(ref o) => write!(fmt, "{:#}", o)?,
 		}
 		Ok(())
-	}
-}
-
-impl PartialEq for Error {
-	fn eq(&self, rhs: &Error) -> bool {
-		match (self, rhs) {
-			(Error::NoDefault, Error::NoDefault) | (Error::NoTagMatched, Error::NoTagMatched) => {
-				true
-			}
-			_ => false,
-		}
 	}
 }
 
@@ -57,14 +49,9 @@ impl Display for AutoProvisionError {
 	fn fmt(&self, fmt: &mut Formatter) -> Result<(), fmtError> {
 		match self {
 			AutoProvisionError::KeyExists => writeln!(fmt, "Key exists."),
-			AutoProvisionError::MissingDependency(dependency, source) => match source {
-				Error::NoDefault => writeln!(fmt, "{} (No default provision.)", dependency),
-				Error::NoTagMatched => writeln!(
-					fmt,
-					"{} (Could not find matching tag to provide at.)",
-					dependency
-				),
-				Error::Other(_) => write!(
+			AutoProvisionError::MissingDependency(dependency, source) => match source.variant {
+				ErrorVariant::NoDefault => writeln!(fmt, "{} (No default provision.)", dependency),
+				ErrorVariant::Other(_) => write!(
 					fmt,
 					"{}\n\
 						-> {:#}",
