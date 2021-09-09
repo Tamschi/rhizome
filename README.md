@@ -11,6 +11,8 @@
 [![GitHub](https://img.shields.io/static/v1?logo=GitHub&label=&message=%20&color=grey)](https://github.com/Tamschi/rhizome)
 [![open issues](https://img.shields.io/github/issues-raw/Tamschi/rhizome)](https://github.com/Tamschi/rhizome/issues)
 [![open pull requests](https://img.shields.io/github/issues-pr-raw/Tamschi/rhizome)](https://github.com/Tamschi/rhizome/pulls)
+[![good first issues](https://img.shields.io/github/issues/Tamschi/rhizome/good%20first%20issue)](https://github.com/Tamschi/rhizome/contribute)
+
 [![crev reviews](https://web.crev.dev/rust-reviews/badge/crev_count/rhizome.svg)](https://web.crev.dev/rust-reviews/crate/rhizome/)
 
 A convenient hierarchical dependency-extraction container.
