@@ -1,3 +1,5 @@
+#![cfg(FALSE)] //TODO: Redo this entire file.
+
 use core::{
 	cell::RefCell,
 	fmt::{Display, Error as fmtError, Formatter},
