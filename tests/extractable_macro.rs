@@ -1,3 +1,4 @@
+#![cfg(FALSE)]
 #![cfg(feature = "macros")]
 
 use rhizome::extractable;

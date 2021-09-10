@@ -1,92 +1,73 @@
-#![cfg(FALSE)] //TODO: Redo this entire file.
-
-use core::{
-	cell::RefCell,
-	fmt::{Display, Error as fmtError, Formatter},
-};
-use rhizome::{
-	error::Error,
-	sync::{extensions::*, Node, TypeKey},
-};
-use std::error::Error as stdError;
+use core::cell::RefCell;
+use rhizome::sync::{extensions::*, Node, TypeKey};
+use std::{any::TypeId, convert::Infallible};
+use tap::Pipe;
 
 type V = RefCell<u8>;
 
 #[test]
 fn shared_at_root() {
-	let root = Node::<V>::new_for_type::<RootOwner>().into_arc();
-	let branch_a = root.branch_for_type::<AOwner>();
-	let branch_b = root.branch_for_type::<BOwner>();
+	let root = Node::<V>::new_with_type_tag::<RootOwner>().into_arc();
+	let branch_a = root.branch_with_type_tag::<AOwner>();
+	let branch_b = root.branch_with_type_tag::<BOwner>();
 
-	*branch_a.extract_with_type_key::<K>().unwrap().borrow_mut() += 1;
-	assert_eq!(*branch_b.extract_with_type_key::<K>().unwrap().borrow(), 1);
+	*branch_a.extract_by_type_key::<K>().unwrap().borrow_mut() += 1;
+	assert_eq!(*branch_b.extract_by_type_key::<K>().unwrap().borrow(), 1);
 }
 
 #[test]
 fn only_at_a() {
-	let root = Node::<V>::new_for_type::<RootOwner>().into_arc();
-	let branch_a = root.branch_for_type::<AOwner>();
-	let branch_b = root.branch_for_type::<BOwner>();
+	let root = Node::<V>::new_with_type_tag::<RootOwner>().into_arc();
+	let branch_a = root.branch_with_type_tag::<AOwner>();
+	let branch_b = root.branch_with_type_tag::<BOwner>();
 
-	assert_eq!(*branch_a.extract_with::<KA, _>().unwrap().borrow(), 0);
-	assert_eq!(
-		branch_b.extract_with::<KA, _>().unwrap_err(),
-		Error::NoTagMatched
-	);
+	assert_eq!(*branch_a.extract_by_type_key::<KA>().unwrap().borrow(), 0);
+	assert!(branch_b.extract_by_type_key::<KA>().is_err());
 }
 
 #[test]
 fn not_shared() {
-	let root = Node::<V>::new_for::<RootOwner>().into_arc();
-	let branch_a = root.branch_for_type::<AOwner>();
-	let branch_b = root.branch_for_type::<AOwner>();
+	let root = Node::<V>::new_with_type_tag::<RootOwner>().into_arc();
+	let branch_a = root.branch_with_type_tag::<AOwner>();
+	let branch_b = root.branch_with_type_tag::<AOwner>();
 
-	*branch_a.extract_with::<KA, _>().unwrap().borrow_mut() += 1;
-	assert_eq!(*branch_b.extract_with::<KA, _>().unwrap().borrow(), 0);
+	*branch_a.extract_by_type_key::<KA>().unwrap().borrow_mut() += 1;
+	assert_eq!(*branch_b.extract_by_type_key::<KA>().unwrap().borrow(), 0);
 }
 
 #[test]
 fn manual_provision() {
-	let mut root = Node::<V>::new_for::<RootOwner>();
-	assert_eq!(
-		root.extract_with::<KManual, _>().unwrap_err(),
-		Error::NoDefault
-	);
+	let root = Node::<V>::new_with_type_tag::<RootOwner>();
+	root.extract_by_type_key::<KManual>().unwrap_err();
 
 	root.provide(KManual::key(), V::default()).unwrap();
-	root.extract_with::<KManual, _>().unwrap();
+	root.extract_by_type_key::<KManual>().unwrap();
 }
 
 struct RootOwner;
 struct AOwner;
 struct BOwner;
 
-#[derive(Debug)]
-enum Never {}
-impl stdError for Never {}
-impl Display for Never {
-	fn fmt(&self, _: &mut Formatter<'_>) -> Result<(), fmtError> {
-		todo!()
-	}
-}
-
 enum K {}
-impl TypeKey<Never, V> for K {
-	fn provision() -> Provision<Never, V> {
-		Provision::at_root(factory)
+impl TypeKey<V> for K {
+	type Error = Infallible;
+
+	fn auto_provide(queried_node: &Node<V>) -> Result<Option<&V>, Self::Error> {
+		queried_node
+			.root()
+			.provide(TypeId::of::<Self>(), 1.into())
+			.expect("unreachable")
+			.pipe(Some)
+			.pipe(Ok)
 	}
 }
 
 enum KA {}
-impl TypeKey<Never, V> for KA {
-	fn provision() -> Provision<Never, V> {
-		Provision::at_owner::<AOwner>(factory)
-	}
+impl TypeKey<V> for KA {
+	type Error = Infallible;
 }
 
 enum KManual {}
-impl TypeKey<Never, V> for KManual {}
-
-fn factory(_: &Node<V>) -> Result<V, Never> {
-	Ok(V::default())
+impl TypeKey<V> for KManual {
+	type Error = Infallible;
 }
