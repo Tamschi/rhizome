@@ -18,7 +18,7 @@ pub use crate::TypeKey;
 pub mod extensions {
 	use std::pin::Pin;
 
-use super::{Arc, Node, TypeId};
+	use super::{Arc, Node, TypeId};
 	use crate::{InsertedOrExisting, NewOrExisting};
 	use pinus::{
 		prelude::*,
@@ -66,7 +66,11 @@ use super::{Arc, Node, TypeId};
 	/// Provides the [`.ensure_provided_here`](`EnsureProvidedHere::ensure_provided_here`) and [`.ensure_provided_here_with`](`EnsureProvidedHere::ensure_provided_here_with`) methods.
 	pub trait EnsureProvidedHere<Value, Key, Tag> {
 		/// Ensures a `Value` is provided exactly at this [`Node`], inserting it if necessary.
-		fn ensure_provided_here_for(&self, key: Key, value: Value) -> InsertedOrExisting<Pin<&Value>>;
+		fn ensure_provided_here_for(
+			&self,
+			key: Key,
+			value: Value,
+		) -> InsertedOrExisting<Pin<&Value>>;
 
 		/// Provides a `Value` exactly at this [`Node`], creating it if not already present.
 		fn ensure_provided_here_for_with<F: FnOnce(&Key) -> Value>(
@@ -76,7 +80,11 @@ use super::{Arc, Node, TypeId};
 		) -> NewOrExisting<Pin<&Value>, Key, F>;
 	}
 	impl<Value, Key: Ord, Tag> EnsureProvidedHere<Value, Key, Tag> for Node<Value, Key, Tag> {
-		fn ensure_provided_here_for(&self, key: Key, value: Value) -> InsertedOrExisting<Pin<&Value>> {
+		fn ensure_provided_here_for(
+			&self,
+			key: Key,
+			value: Value,
+		) -> InsertedOrExisting<Pin<&Value>> {
 			match self.local_scope.insert(key, value) {
 				Ok(inserted) => InsertedOrExisting::Inserted(inserted),
 				Err((key, value)) => InsertedOrExisting::Existing(
