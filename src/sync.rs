@@ -2,8 +2,8 @@
 
 use crate::UnwrapInfallible;
 use core::any::{Any, TypeId};
-use pinus::{prelude::UnpinnedPineMap, sync::PineMap};
-use std::{borrow::Borrow, sync::Arc};
+use pinus::{prelude::*, sync::PressedPineMap};
+use std::{borrow::Borrow, pin::Pin, sync::Arc};
 use tap::Pipe;
 
 #[cfg(feature = "macros")]
@@ -11,10 +11,9 @@ pub use crate::TypeKey;
 
 /// Extension methods for [`Node`] and [`Arc<Node>`].
 pub mod extensions {
-	use std::pin::Pin;
-
 	use super::{Arc, Node, TypeId};
-	use pinus::sync::PineMap;
+	use pinus::{prelude::*, sync::PressedPineMap};
+	use std::pin::Pin;
 
 	/// Provides the [`.branch_for`](`BranchFor::branch_for`) and [`.branch_for`](`BranchFor::into_branch_for`) methods.
 	pub trait BranchFor<Value, Key: Ord, Tag> {
@@ -79,7 +78,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide(&self, key: Key, value: Value) -> Result<&Value, (Key, Value)> {
+	pub fn provide(&self, key: Key, value: Value) -> Result<Pin<&Value>, (Key, Value)> {
 		self.local_scope.insert(key, value)
 	}
 
@@ -91,7 +90,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide_mut(&mut self, key: Key, value: Value) -> Result<&mut Value, (Key, Value)> {
+	pub fn provide_mut(&mut self, key: Key, value: Value) -> Result<Pin<&mut Value>, (Key, Value)> {
 		self.local_scope.insert_mut(key, value)
 	}
 
@@ -161,7 +160,9 @@ impl<Value, Tag: PartialEq> Node<Value, TypeId, Tag> {
 	/// # Errors
 	///
 	/// Iff no value could be extracted.
-	pub fn get_by_type_key<Key: TypeKey<Value, Tag>>(&self) -> Result<Option<&Value>, Key::Error> {
+	pub fn get_by_type_key<Key: TypeKey<Value, Tag>>(
+		&self,
+	) -> Result<Option<Pin<&Value>>, Key::Error> {
 		Key::select(self)
 	}
 
@@ -172,7 +173,7 @@ impl<Value, Tag: PartialEq> Node<Value, TypeId, Tag> {
 	/// Iff no value could be extracted.
 	pub fn get_local_by_type_key<Key: TypeKey<Value, Tag>>(
 		&self,
-	) -> Result<Option<&Value>, Key::Error> {
+	) -> Result<Option<Pin<&Value>>, Key::Error> {
 		Key::select_local(self)
 	}
 }
@@ -182,7 +183,7 @@ impl<Value, Tag: PartialEq> Node<Value, TypeId, Tag> {
 impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	/// Extracts a value from the [`Node`] tree according to the given `key`.
 	#[must_use]
-	pub fn get<Q>(&self, key: &Q) -> Option<&Value>
+	pub fn get<Q>(&self, key: &Q) -> Option<Pin<&Value>>
 	where
 		Key: Borrow<Q>,
 		Q: Ord + ?Sized,
@@ -197,7 +198,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff this [`Node`] is poisoned.
 	#[must_use]
-	pub fn get_local<Q>(&self, key: &Q) -> Option<&Value>
+	pub fn get_local<Q>(&self, key: &Q) -> Option<Pin<&Value>>
 	where
 		Key: Borrow<Q>,
 		Q: Ord + ?Sized,
@@ -216,10 +217,10 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
 	#[must_use]
-	pub fn find<S: Fn(&Node<Value, Key, Tag>) -> Option<&Value>>(
+	pub fn find<S: Fn(&Node<Value, Key, Tag>) -> Option<Pin<&Value>>>(
 		&self,
 		local_selector: S,
-	) -> Option<&Value> {
+	) -> Option<Pin<&Value>> {
 		self.try_find_extract(|node| Ok(local_selector(node)))
 			.unwrap_infallible()
 	}
@@ -240,10 +241,10 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
 	#[must_use]
-	pub fn try_find_extract<S: Fn(&Node<Value, Key, Tag>) -> Result<Option<&Value>, E>, E>(
+	pub fn try_find_extract<S: Fn(&Node<Value, Key, Tag>) -> Result<Option<Pin<&Value>>, E>, E>(
 		&self,
 		local_selector: S,
-	) -> Result<Option<&Value>, E> {
+	) -> Result<Option<Pin<&Value>>, E> {
 		let mut this = self;
 		loop {
 			if let found @ Some(_) = local_selector(this)? {
@@ -275,11 +276,11 @@ where
 
 	fn select_local(
 		_queried_node: &Node<Value, TypeId, Tag>,
-	) -> Result<Option<&Value>, Self::Error> {
+	) -> Result<Option<Pin<&Value>>, Self::Error> {
 		Ok(None)
 	}
 
-	fn select(node: &Node<Value, TypeId, Tag>) -> Result<Option<&Value>, Self::Error> {
+	fn select(node: &Node<Value, TypeId, Tag>) -> Result<Option<Pin<&Value>>, Self::Error> {
 		node.try_find_extract(Self::select_local)
 	}
 }
