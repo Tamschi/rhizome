@@ -1,15 +1,10 @@
 //! A threading-compatible implementation.
 
-use crate::error::Error;
+use crate::UnwrapInfallible;
 use core::any::{Any, TypeId};
-use pinus::{
-	prelude::*,
-	sync::{PineMap, PressedPineMap},
-};
-use std::{
-	collections::btree_map::Entry, convert::Infallible, error::Error as stdError, pin::Pin,
-	sync::Arc,
-};
+use pinus::{prelude::UnpinnedPineMap, sync::PineMap};
+use std::{borrow::Borrow, sync::Arc};
+use tap::Pipe;
 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
@@ -19,13 +14,9 @@ pub mod extensions {
 	use std::pin::Pin;
 
 	use super::{Arc, Node, TypeId};
-	use crate::{InsertedOrExisting, NewOrExisting};
-	use pinus::{
-		prelude::*,
-		sync::{PineMap, PressedPineMap},
-	};
+	use pinus::sync::PineMap;
 
-	/// Provides the [`.branch_for`](`BranchFor::branch_for`) method.
+	/// Provides the [`.branch_for`](`BranchFor::branch_for`) and [`.branch_for`](`BranchFor::into_branch_for`) methods.
 	pub trait BranchFor<Value, Key: Ord, Tag> {
 		/// Creates a new [`Node`] instance referencing the current one.
 		fn branch_for(&self, tag: Tag) -> Node<Value, Key, Tag>;
@@ -45,117 +36,22 @@ pub mod extensions {
 		}
 	}
 
-	/// Provides the [`.branch_for_type`](`BranchForType::branch_for_type`) method.
-	pub trait BranchForType<Value, Key: Ord>: BranchFor<Value, Key, TypeId> {
+	/// Provides the [`.branch_with_type_tag`](`BranchWithTypeTag::branch_with_type_tag`) and [`.into_branch_for_type`](`BranchWithTypeTag::into_branch_with_type_tag`) methods.
+	pub trait BranchWithTypeTag<Value, Key: Ord>: BranchFor<Value, Key, TypeId> {
 		/// Creates a new [`Node`] instance referencing the current one, tagged with the [`TypeId`] of `Tag`.
 		fn branch_with_type_tag<Tag: 'static>(&self) -> Node<Value, Key, TypeId>;
 		/// Creates a new [`Node`] instance referencing the current one, tagged with the [`TypeId`] of `Tag`, without cloning this [`Arc`].
-		fn into_branch_for_type<Tag: 'static>(self) -> Node<Value, Key, TypeId>;
+		fn into_branch_with_type_tag<Tag: 'static>(self) -> Node<Value, Key, TypeId>;
 	}
-	impl<Value, Key: Ord> BranchForType<Value, Key> for Arc<Node<Value, Key, TypeId>> {
+	impl<Value, Key: Ord> BranchWithTypeTag<Value, Key> for Arc<Node<Value, Key, TypeId>> {
 		#[inline]
 		fn branch_with_type_tag<Tag: 'static>(&self) -> Node<Value, Key, TypeId> {
 			self.branch_for(TypeId::of::<Tag>())
 		}
 		#[inline]
-		fn into_branch_for_type<Tag: 'static>(self) -> Node<Value, Key, TypeId> {
+		fn into_branch_with_type_tag<Tag: 'static>(self) -> Node<Value, Key, TypeId> {
 			self.into_branch_for(TypeId::of::<Tag>())
 		}
-	}
-
-	/// Provides the [`.ensure_provided_here`](`EnsureProvidedHere::ensure_provided_here`) and [`.ensure_provided_here_with`](`EnsureProvidedHere::ensure_provided_here_with`) methods.
-	pub trait EnsureProvidedHere<Value, Key, Tag> {
-		/// Ensures a `Value` is provided exactly at this [`Node`], inserting it if necessary.
-		fn ensure_provided_here_for(
-			&self,
-			key: Key,
-			value: Value,
-		) -> InsertedOrExisting<Pin<&Value>>;
-
-		/// Provides a `Value` exactly at this [`Node`], creating it if not already present.
-		fn ensure_provided_here_for_with<F: FnOnce(&Key) -> Value>(
-			&self,
-			key: Key,
-			factory: F,
-		) -> NewOrExisting<Pin<&Value>, Key, F>;
-	}
-	impl<Value, Key: Ord, Tag> EnsureProvidedHere<Value, Key, Tag> for Node<Value, Key, Tag> {
-		fn ensure_provided_here_for(
-			&self,
-			key: Key,
-			value: Value,
-		) -> InsertedOrExisting<Pin<&Value>> {
-			match self.local_scope.insert(key, value) {
-				Ok(inserted) => InsertedOrExisting::Inserted(inserted),
-				Err((key, value)) => InsertedOrExisting::Existing(
-					self.local_scope.get(&key).expect("unreachable"),
-					value,
-				),
-			}
-		}
-
-		fn ensure_provided_here_for_with<F: FnOnce(&Key) -> Value>(
-			&self,
-			key: Key,
-			factory: F,
-		) -> NewOrExisting<Pin<&Value>, Key, F> {
-			match self.local_scope.insert_with(key, factory) {
-				Ok(new) => NewOrExisting::New(new),
-				Err((key, factory)) => NewOrExisting::Existing {
-					existing: self.local_scope.get(&key).expect("unreachable"),
-					key,
-					factory,
-				},
-			}
-		}
-	}
-
-	/// Provides the [`.ensure_provided_here`](`MutEnsureProvidedHere::ensure_provided_here`) and [`.ensure_provided_here_with`](`MutEnsureProvidedHere::ensure_provided_here_with`) methods, but better.
-	///
-	/// The same as [`EnsureProvidedHere`], but faster and returns [`InsertedOrExisting<&mut Value>`] or [`NewOrExisting<&mut Value>`].
-	pub trait MutEnsureProvidedHere<Value, Key, Tag>: EnsureProvidedHere<Value, Key, Tag> {
-		/// The same as [`EnsureProvidedHere::provide`], but faster and returns [`NewOrExisting<&mut Value>`].
-		fn ensure_provided_here(&self, value: Value) -> InsertedOrExisting<&Value>;
-
-		/// The same as [`EnsureProvidedHere::provide_with`], but faster and returns [`NewOrExisting<&mut Value>`].
-		fn ensure_provided_here_with<F: FnOnce(&Key) -> Value>(
-			&mut self,
-			factory: F,
-		) -> NewOrExisting<&mut Value, Key, F>;
-	}
-
-	/// Provides the [`.ensure_provided_here_for_type_key`](`EnsureProvidedHereForTypeKey::ensure_provided_here_for_type_key`) and [`.ensure_provided_here_for_type_key_with`](`EnsureProvidedHereForTypeKey::ensure_provided_here_for_type_key_with`) methods.
-	pub trait EnsureProvidedHereForTypeKey<Value, Tag> {
-		/// Ensures a `Value` is provided exactly at this [`Node`], inserting it if necessary.
-		fn ensure_provided_here_for_type_key<Key: 'static>(
-			&self,
-			value: Value,
-		) -> InsertedOrExisting<&Value>;
-
-		/// Provides a `Value` exactly at this [`Node`], creating it if not already present.
-		fn ensure_provided_here_for_type_key_with<Key: 'static, F: FnOnce() -> Value>(
-			&self,
-			factory: F,
-		) -> NewOrExisting<&Value, Key, F>;
-	}
-
-	/// Provides the [`.ensure_provided_here_for_type_key`](`MutEnsureProvidedHereForTypeKey::ensure_provided_here_for_type_key`) and [`.ensure_provided_here_for_type_key_with`](`MutEnsureProvidedHereForTypeKey::ensure_provided_here_for_type_key_with`) methods, but better.
-	///
-	/// The same as [`EnsureProvidedHereForTypeKey`], but faster and returns [`InsertedOrExisting<&mut Value>`] or [`NewOrExisting<&mut Value>`].
-	pub trait MutEnsureProvidedHereForTypeKey<Value, Tag>:
-		EnsureProvidedHereForTypeKey<Value, Tag>
-	{
-		/// The same as [`EnsureProvidedHereForTypeKey::ensure_provided_here_for_type_key`], but faster and returns [`InsertedOrExisting<&mut Value>`].
-		fn ensure_provided_here_for_type_key<Key: 'static>(
-			&mut self,
-			value: Value,
-		) -> InsertedOrExisting<&mut Value>;
-
-		/// The same as [`EnsureProvidedHereForTypeKey::ensure_provided_here_for_type_key_with`], but faster and returns [`NewOrExisting<&mut Value>`].
-		fn ensure_provided_here_for_type_key_with<Key: 'static, F: FnOnce() -> Value>(
-			&mut self,
-			factory: F,
-		) -> NewOrExisting<&mut Value, Key, F>;
 	}
 }
 
@@ -166,10 +62,10 @@ pub struct Node<Value: ?Sized = dyn Any, Key: Ord = TypeId, Tag = TypeId> {
 	local_scope: Pin<PressedPineMap<Key, Value>>,
 }
 
-impl<V: ?Sized, K: Ord, T> Node<V, K, T> {
+impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	/// Creates a new root-[`Node`] with tag `tag`.
 	#[must_use]
-	pub fn new(tag: T) -> Self {
+	pub fn new(tag: Tag) -> Self {
 		Self {
 			parent: None,
 			tag,
@@ -183,10 +79,7 @@ impl<V: ?Sized, K: Ord, T> Node<V, K, T> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide(&self, key: K, value: V) -> Result<Pin<&V>, (K, V)>
-	where
-		V: Sized,
-	{
+	pub fn provide(&self, key: Key, value: Value) -> Result<&Value, (Key, Value)> {
 		self.local_scope.insert(key, value)
 	}
 
@@ -198,10 +91,7 @@ impl<V: ?Sized, K: Ord, T> Node<V, K, T> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide_mut(&mut self, key: K, value: V) -> Result<Pin<&mut V>, (K, V)>
-	where
-		V: Sized,
-	{
+	pub fn provide_mut(&mut self, key: Key, value: Value) -> Result<&mut Value, (Key, Value)> {
 		self.local_scope.insert_mut(key, value)
 	}
 
@@ -223,14 +113,45 @@ impl<V: ?Sized, K: Ord, T> Node<V, K, T> {
 		}
 		this
 	}
+
+	/// Retrieves a reference to the neared [`Node`] node tagged with `tag`.
+	///
+	/// This may be the current node or any of its ancestors, but no siblings at any level.
+	#[must_use]
+	pub fn tagged<Q>(&self, tag: &Q) -> Option<&Self>
+	where
+		Tag: Borrow<Q>,
+		Q: PartialEq + ?Sized,
+	{
+		let mut this = self;
+		loop {
+			if this.tag.borrow() == tag {
+				break Some(this);
+			}
+			this = this.parent()?;
+		}
+	}
 }
 
 impl<Value, Key: Ord> Node<Value, Key, TypeId> {
 	/// Creates a new root-[`Node`] tagged with `Tag`'s [`TypeId`].
-	#[inline]
+	///
+	/// # Tracing
+	///
+	/// ## `error`
 	#[must_use]
 	pub fn new_with_type_tag<Tag: 'static>() -> Self {
+		if tracing::Level::ERROR > tracing::level_filters::STATIC_MAX_LEVEL {}
+
 		Self::new(TypeId::of::<Tag>())
+	}
+
+	/// Retrieves a reference to the neared [`Node`] node tagged with `Tag`'s [`TypeId`].
+	///
+	/// This may be the current node or any of its ancestors, but no siblings at any level.
+	#[must_use]
+	pub fn type_tagged<Tag: 'static>(&self) -> Option<&Self> {
+		self.tagged(&TypeId::of::<Tag>())
 	}
 }
 
@@ -240,78 +161,105 @@ impl<Value, Tag: PartialEq> Node<Value, TypeId, Tag> {
 	/// # Errors
 	///
 	/// Iff no value could be extracted.
-	pub fn extract_by_type_key<Key: TypeKey<Value, Tag>>(&self) -> Result<&Value, Error> {
-		Key::extract_value_from(self)
+	pub fn get_by_type_key<Key: TypeKey<Value, Tag>>(&self) -> Result<Option<&Value>, Key::Error> {
+		Key::select(self)
+	}
+
+	/// Extracts a value from the node tree according to the given type key.
+	///
+	/// # Errors
+	///
+	/// Iff no value could be extracted.
+	pub fn get_local_by_type_key<Key: TypeKey<Value, Tag>>(
+		&self,
+	) -> Result<Option<&Value>, Key::Error> {
+		Key::select_local(self)
 	}
 }
 
 //TODO: Set up Error enum. (with variants for missing keys and other errors).
 //TRACKING: K must be clone until entry_insert/https://github.com/rust-lang/rust/issues/65225 lands.
-impl<Value, Key: Clone + Ord, Tag: PartialEq> Node<Value, Key, Tag> {
+impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	/// Extracts a value from the [`Node`] tree according to the given `key`.
-	pub fn extract(&self, key: &Key) -> Result<&Value, Error> {
-		self.extract_or_try_provide(key, |_| -> Result<_, Infallible> { Ok(None) })
+	#[must_use]
+	pub fn get<Q>(&self, key: &Q) -> Option<&Value>
+	where
+		Key: Borrow<Q>,
+		Q: Ord + ?Sized,
+	{
+		self.try_find_extract(|node| node.local_scope.get(key).pipe(Ok))
+			.unwrap_infallible()
 	}
 
-	/// Extracts a value from the node tree according to the given `key` and `provision`.
+	/// Extracts a value from this [`Node`] only according to the given `key`.
+	///
+	/// # Panics
+	///
+	/// Iff this [`Node`] is poisoned.
+	#[must_use]
+	pub fn get_local<Q>(&self, key: &Q) -> Option<&Value>
+	where
+		Key: Borrow<Q>,
+		Q: Ord + ?Sized,
+	{
+		self.local_scope.get(key)
+	}
+
+	/// Extracts a value from the node tree according to the given `selector`.
+	///
+	/// The selector is called once each for this [`Node`] and its ancestors, in order of inverse age, until either:
+	///
+	/// - It returns [`Some`].
+	/// - No further parent [`Node`] is available.
+	///
+	/// # Panics
+	///
+	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
+	#[must_use]
+	pub fn find<S: Fn(&Node<Value, Key, Tag>) -> Option<&Value>>(
+		&self,
+		local_selector: S,
+	) -> Option<&Value> {
+		self.try_find_extract(|node| Ok(local_selector(node)))
+			.unwrap_infallible()
+	}
+
+	/// Extracts a value from the node tree according to the given `selector`.
+	///
+	/// The selector is called once each for this [`Node`] and its ancestors, in order of inverse age, until either:
+	///
+	/// - It fails.
+	/// - It returns [`Some`].
+	/// - No further parent [`Node`] is available.
 	///
 	/// # Errors
 	///
-	/// Iff no value could be extracted.
-	#[allow(clippy::missing_panics_doc)] // TODO: Validate this isn't possible, then clean up potential panic sites.
-	pub fn extract_or_try_provide<E: stdError + 'static>(
+	/// Iff the selector fails.
+	///
+	/// # Panics
+	///
+	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
+	#[must_use]
+	pub fn try_find_extract<S: Fn(&Node<Value, Key, Tag>) -> Result<Option<&Value>, E>, E>(
 		&self,
-		key: &Key,
-		auto_provide: impl FnOnce(&Node<Value, TypeId, Tag>) -> Result<Option<&Value>, E>,
-	) -> Result<&Value, Error> {
-		#![allow(clippy::items_after_statements)]
-
-		todo!();
-
-		// let mut current = self;
-		// loop {
-		// 	{
-		// 		if let Some(guard) = current
-		// 			.local_scope
-		// 			.read()
-		// 			.unwrap()
-		// 			.maybe_map_guard(|local_scope| local_scope.get(key))
-		// 		{
-		// 			return Ok(guard);
-		// 		}
-		// 	}
-
-		// 	fn insert<E: stdError + 'static, V, K:  Ord, T>(
-		// 		node: &Node<V, K, T>,
-		// 		key: K,
-		// 		factory: Factory<E, V, K, T>,
-		// 	) -> Result<(), Error> {
-		// 		let value = factory(node).map_err(|error| Error::Other(Box::new(error)))?;
-		// 		assert!(node
-		// 			.local_scope
-		// 			.write()
-		// 			.unwrap()
-		// 			.insert(key, value)
-		// 			.is_none());
-		// 		Ok(())
-		// 	}
-
-		// 	match (&provision, &current.parent) {
-		// 		(Provision::At(Location::Tagged(tag), factory), _) if self.tag == *tag => {
-		// 			insert(current, key.clone(), *factory)?;
-		// 		}
-		// 		(_, Some(parent)) => current = parent,
-		// 		(Provision::At(Location::Root, factory), None) => {
-		// 			insert(current, key.clone(), *factory)?;
-		// 		}
-		// 		(Provision::Never, None) => return Err(Error::NoDefault),
-		// 		(Provision::At(_, _), None) => return Err(Error::NoTagMatched),
-		// 	}
-		// }
+		local_selector: S,
+	) -> Result<Option<&Value>, E> {
+		let mut this = self;
+		loop {
+			if let found @ Some(_) = local_selector(this)? {
+				break found;
+			} else if let Some(parent) = this.parent() {
+				this = parent
+			} else {
+				break None;
+			}
+		}
+		.pipe(Ok)
 	}
 }
 
-pub trait TypeKey<Value = Box<dyn Any>, Tag: PartialEq = TypeId>
+/// TODO
+pub trait TypeKey<Value = Box<dyn Any>, Tag = TypeId>
 where
 	Self: 'static,
 {
@@ -320,15 +268,18 @@ where
 		TypeId::of::<Self>()
 	}
 
-	type Error: stdError + 'static;
+	/// Unless you have a good reason not to, use [`crate::error::Error`]!
+	///
+	/// It comes with friendly backtrace functionality not available elsewhere.
+	type Error;
 
-	fn auto_provide(
+	fn select_local(
 		_queried_node: &Node<Value, TypeId, Tag>,
 	) -> Result<Option<&Value>, Self::Error> {
 		Ok(None)
 	}
 
-	fn extract_value_from(node: &Node<Value, TypeId, Tag>) -> Result<&Value, Error> {
-		node.extract_or_try_provide(&Self::key(), Self::auto_provide)
+	fn select(node: &Node<Value, TypeId, Tag>) -> Result<Option<&Value>, Self::Error> {
+		node.try_find_extract(Self::select_local)
 	}
 }

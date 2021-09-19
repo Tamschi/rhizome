@@ -14,8 +14,12 @@ pub mod readme {
 
 pub mod error;
 pub mod sync;
+pub mod friendly_names;
 
-use std::ops::{Deref, DerefMut};
+use std::{
+	convert::Infallible,
+	ops::{Deref, DerefMut},
+};
 
 #[cfg(feature = "macros")]
 pub use rhizome_proc_macro_definitions::{extractable, implement_type_keys, TypeKey};
@@ -119,5 +123,16 @@ where
 		match self {
 			InsertedOrExisting::Inserted(t) | InsertedOrExisting::Existing(t, _) => t,
 		}
+	}
+}
+
+trait UnwrapInfallible {
+	type T;
+	fn unwrap_infallible(self) -> Self::T;
+}
+impl<T> UnwrapInfallible for Result<T, Infallible> {
+	type T = T;
+	fn unwrap_infallible(self) -> Self::T {
+		self.unwrap()
 	}
 }
