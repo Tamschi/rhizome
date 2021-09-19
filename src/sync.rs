@@ -2,9 +2,13 @@
 
 use crate::error::Error;
 use core::any::{Any, TypeId};
-use pinus::{prelude::UnpinnedPineMap, sync::PineMap};
+use pinus::{
+	prelude::*,
+	sync::{PineMap, PressedPineMap},
+};
 use std::{
-	collections::btree_map::Entry, convert::Infallible, error::Error as stdError, sync::Arc,
+	collections::btree_map::Entry, convert::Infallible, error::Error as stdError, pin::Pin,
+	sync::Arc,
 };
 
 #[cfg(feature = "macros")]
@@ -12,9 +16,14 @@ pub use crate::TypeKey;
 
 /// Extension methods for [`Node`] and [`Arc<Node>`].
 pub mod extensions {
-	use super::{Arc, Node, TypeId};
+	use std::pin::Pin;
+
+use super::{Arc, Node, TypeId};
 	use crate::{InsertedOrExisting, NewOrExisting};
-	use pinus::{prelude::UnpinnedPineMap, sync::PineMap};
+	use pinus::{
+		prelude::*,
+		sync::{PineMap, PressedPineMap},
+	};
 
 	/// Provides the [`.branch_for`](`BranchFor::branch_for`) method.
 	pub trait BranchFor<Value, Key: Ord, Tag> {
@@ -31,7 +40,7 @@ pub mod extensions {
 			Node {
 				parent: Some(self),
 				tag,
-				local_scope: PineMap::default(),
+				local_scope: PressedPineMap::new().pin(),
 			}
 		}
 	}
@@ -57,17 +66,17 @@ pub mod extensions {
 	/// Provides the [`.ensure_provided_here`](`EnsureProvidedHere::ensure_provided_here`) and [`.ensure_provided_here_with`](`EnsureProvidedHere::ensure_provided_here_with`) methods.
 	pub trait EnsureProvidedHere<Value, Key, Tag> {
 		/// Ensures a `Value` is provided exactly at this [`Node`], inserting it if necessary.
-		fn ensure_provided_here_for(&self, key: Key, value: Value) -> InsertedOrExisting<&Value>;
+		fn ensure_provided_here_for(&self, key: Key, value: Value) -> InsertedOrExisting<Pin<&Value>>;
 
 		/// Provides a `Value` exactly at this [`Node`], creating it if not already present.
 		fn ensure_provided_here_for_with<F: FnOnce(&Key) -> Value>(
 			&self,
 			key: Key,
 			factory: F,
-		) -> NewOrExisting<&Value, Key, F>;
+		) -> NewOrExisting<Pin<&Value>, Key, F>;
 	}
 	impl<Value, Key: Ord, Tag> EnsureProvidedHere<Value, Key, Tag> for Node<Value, Key, Tag> {
-		fn ensure_provided_here_for(&self, key: Key, value: Value) -> InsertedOrExisting<&Value> {
+		fn ensure_provided_here_for(&self, key: Key, value: Value) -> InsertedOrExisting<Pin<&Value>> {
 			match self.local_scope.insert(key, value) {
 				Ok(inserted) => InsertedOrExisting::Inserted(inserted),
 				Err((key, value)) => InsertedOrExisting::Existing(
@@ -81,7 +90,7 @@ pub mod extensions {
 			&self,
 			key: Key,
 			factory: F,
-		) -> NewOrExisting<&Value, Key, F> {
+		) -> NewOrExisting<Pin<&Value>, Key, F> {
 			match self.local_scope.insert_with(key, factory) {
 				Ok(new) => NewOrExisting::New(new),
 				Err((key, factory)) => NewOrExisting::Existing {
@@ -143,20 +152,20 @@ pub mod extensions {
 }
 
 /// A thread-safe tagged inverse tree node.
-pub struct Node<Value = Box<dyn Any>, Key: Ord = TypeId, Tag = TypeId> {
+pub struct Node<Value: ?Sized = dyn Any, Key: Ord = TypeId, Tag = TypeId> {
 	parent: Option<Arc<Node<Value, Key, Tag>>>,
 	tag: Tag,
-	local_scope: PineMap<Key, Value>,
+	local_scope: Pin<PressedPineMap<Key, Value>>,
 }
 
-impl<V, K: Ord, T> Node<V, K, T> {
+impl<V: ?Sized, K: Ord, T> Node<V, K, T> {
 	/// Creates a new root-[`Node`] with tag `tag`.
 	#[must_use]
 	pub fn new(tag: T) -> Self {
 		Self {
 			parent: None,
 			tag,
-			local_scope: PineMap::default(),
+			local_scope: PressedPineMap::default().pin(),
 		}
 	}
 
@@ -166,7 +175,10 @@ impl<V, K: Ord, T> Node<V, K, T> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide(&self, key: K, value: V) -> Result<&V, (K, V)> {
+	pub fn provide(&self, key: K, value: V) -> Result<Pin<&V>, (K, V)>
+	where
+		V: Sized,
+	{
 		self.local_scope.insert(key, value)
 	}
 
@@ -178,7 +190,10 @@ impl<V, K: Ord, T> Node<V, K, T> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide_mut(&mut self, key: K, value: V) -> Result<&mut V, (K, V)> {
+	pub fn provide_mut(&mut self, key: K, value: V) -> Result<Pin<&mut V>, (K, V)>
+	where
+		V: Sized,
+	{
 		self.local_scope.insert_mut(key, value)
 	}
 
