@@ -56,3 +56,5 @@ git_info = "0.1.2"
 static_assertions = "1.1.0"
 version-sync = "0.9.1"
 wasm-bindgen-test = "0.3.27"
+
+# FIXME: Configure docs.rs to show all features.

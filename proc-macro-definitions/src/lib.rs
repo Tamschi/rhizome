@@ -217,7 +217,7 @@ fn implement_dyncast(
 		/// # Targets
 		///
 		#(#[doc = concat!("- `", stringify!(#targets), "`")])*
-		unsafe impl#impl_generics ::#rhizome::DyncastObject for #dyn_ #ident#type_generics
+		unsafe impl#impl_generics ::#rhizome::Dyncast for #dyn_ #ident#type_generics
 			#where_clause
 		{
 			fn __dyncast(
@@ -227,17 +227,20 @@ fn implement_dyncast(
 				target: ::std::any::TypeId,
 			) -> ::core::option::Option<
 				::core::mem::MaybeUninit<
-					[::core::primitive::u8; ::core::mem::size_of::<&dyn ::#rhizome::DyncastObject>()]
+					[::core::primitive::u8; ::core::mem::size_of::<&dyn ::#rhizome::Dyncast>()]
 				>
 			> {
 				|this, target| #(if target == ::std::any::TypeId::of::<#targets>() {
-					::#rhizome::__::const_assert!(::core::mem::size_of::<&#targets>() <= ::core::mem::size_of::<&dyn DyncastObject>());
+					::#rhizome::__::const_assert!(::core::mem::size_of::<*mut #targets>() <= ::core::mem::size_of::<&dyn Dyncast>());
 					::core::option::Option::Some(unsafe {
-						let mut result_memory = ::core::mem::MaybeUninit::<[u8; ::core::mem::size_of::<&dyn DyncastObject>()]>::uninit();
+						let mut result_memory = ::core::mem::MaybeUninit::<[u8; ::core::mem::size_of::<&dyn Dyncast>()]>::uninit();
 						result_memory
 							.as_mut_ptr()
-							.cast::<&#targets>()
-							.write_unaligned(this.cast::<#dyn_ #ident#type_generics>().as_ref() as &#targets);
+							.cast::<::core::ptr::NonNull<#targets>>()
+							.write_unaligned(::core::ptr::NonNull::<#targets>::new_unchecked(
+								this.cast::<#dyn_ #ident#type_generics>().as_ptr() as *mut #targets
+							)
+						);
 						result_memory
 					})
 				} else)* {
