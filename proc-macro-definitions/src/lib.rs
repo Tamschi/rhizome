@@ -18,6 +18,7 @@ use syn::{
 	parse::{Parse, ParseStream},
 	parse_macro_input,
 	punctuated::Punctuated,
+	visit_mut::{self, VisitMut},
 	Attribute, Error, Generics, Ident, Item, Lifetime, PredicateType, Result, Token, Type,
 	TypeParamBound, WhereClause, WherePredicate,
 };
@@ -112,6 +113,8 @@ fn implement_dyncast(
 	rhizome: &Ident,
 	ignore_unrelated_attributes: bool,
 ) -> TokenStream2 {
+	#![allow(clippy::items_after_statements)]
+
 	let ImplTarget {
 		attributes,
 		dyn_,
@@ -151,7 +154,7 @@ fn implement_dyncast(
 		},
 	}));
 
-	let targets: Vec<Type> = attributes
+	let mut targets: Vec<Type> = attributes
 		.iter()
 		.filter(|attribute| {
 			attribute.path.is_ident("dyncast")
@@ -184,6 +187,30 @@ fn implement_dyncast(
 		.flatten()
 		.collect::<Vec<_>>();
 
+	struct SelfReplacer(Type);
+	impl VisitMut for SelfReplacer {
+		fn visit_type_mut(&mut self, t: &mut Type) {
+			match t {
+				Type::Path(tp) if tp.qself == None && tp.path.is_ident("Self") => {
+					*t = self.0.clone()
+				}
+				t => visit_mut::visit_type_mut(self, t),
+			}
+		}
+	}
+
+	for target in &mut targets {
+		SelfReplacer({
+			call2_strict(
+				quote_spanned!(Span::mixed_site()=> #dyn_ #ident#type_generics),
+				Type::parse,
+			)
+			.unwrap()
+			.unwrap()
+		})
+		.visit_type_mut(target);
+	}
+
 	quote_spanned! {Span::mixed_site()=>
 		#(#attribute_errors)*
 
@@ -204,13 +231,13 @@ fn implement_dyncast(
 				>
 			> {
 				|this, target| #(if target == ::std::any::TypeId::of::<#targets>() {
+					::#rhizome::__::const_assert!(::core::mem::size_of::<&#targets>() <= ::core::mem::size_of::<&dyn DyncastObject>());
 					::core::option::Option::Some(unsafe {
-						assert!(::core::mem::size_of::<&#targets>() <= ::core::mem::size_of::<&dyn DyncastObject>());
 						let mut result_memory = ::core::mem::MaybeUninit::<[u8; ::core::mem::size_of::<&dyn DyncastObject>()]>::uninit();
 						result_memory
 							.as_mut_ptr()
 							.cast::<&#targets>()
-							.write_unaligned(this.cast::<Self>().as_ref() as &#targets);
+							.write_unaligned(this.cast::<#dyn_ #ident#type_generics>().as_ref() as &#targets);
 						result_memory
 					})
 				} else)* {
