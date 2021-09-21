@@ -18,6 +18,6 @@ fn dyncast() {
 	for dyncast in &dyncasts {
 		let debug = dyncast.dyncast::<dyn Debug>();
 		assert!(debug.is_some());
-		eprintln!("{:#?}", debug);
+		println!("{:#?}", debug);
 	}
 }

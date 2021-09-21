@@ -45,7 +45,7 @@ impl dyn Dyncast {
 	#[allow(missing_docs)]
 	#[must_use]
 	pub fn dyncast<T: 'static + ?Sized>(&self) -> Option<&T> {
-		self.__dyncast()(
+		self.__dyncast(
 			unsafe { NonNull::new_unchecked(self as *const Self as *mut Self) }.cast(),
 			TypeId::of::<T>(),
 		)
@@ -55,17 +55,15 @@ impl dyn Dyncast {
 	#[allow(missing_docs)]
 	#[must_use]
 	pub fn dyncast_mut<T: 'static + ?Sized>(&mut self) -> Option<&mut T> {
-		self.__dyncast()(
-			unsafe { NonNull::new_unchecked(self) }.cast(),
-			TypeId::of::<T>(),
-		)
-		.map(|pointer_data| unsafe { pointer_data.as_ptr().cast::<&mut T>().read_unaligned() })
+		let this = unsafe { NonNull::new_unchecked(self) };
+		self.__dyncast(this.cast(), TypeId::of::<T>())
+			.map(|pointer_data| unsafe { pointer_data.as_ptr().cast::<&mut T>().read_unaligned() })
 	}
 
 	#[allow(missing_docs)]
 	#[must_use]
 	pub fn dyncast_pinned<'a, T: 'static + ?Sized>(self: Pin<&'a Self>) -> Option<Pin<&'a T>> {
-		self.__dyncast()(
+		self.__dyncast(
 			unsafe { NonNull::new_unchecked(&*self as *const Self as *mut Self) }.cast(),
 			TypeId::of::<T>(),
 		)
@@ -77,14 +75,13 @@ impl dyn Dyncast {
 	pub fn dyncast_pinned_mut<'a, T: 'static + ?Sized>(
 		mut self: Pin<&'a mut Self>,
 	) -> Option<Pin<&'a mut T>> {
-		self.__dyncast()(
-			unsafe {
-				NonNull::new_unchecked(Pin::into_inner_unchecked(self.as_mut()) as *mut Self)
-			}
-			.cast(),
-			TypeId::of::<T>(),
-		)
-		.map(|pointer_data| unsafe { pointer_data.as_ptr().cast::<Pin<&mut T>>().read_unaligned() })
+		let this = unsafe {
+			NonNull::new_unchecked(Pin::into_inner_unchecked(self.as_mut()) as *mut Self)
+		};
+		self.__dyncast(this.cast(), TypeId::of::<T>())
+			.map(|pointer_data| unsafe {
+				pointer_data.as_ptr().cast::<Pin<&mut T>>().read_unaligned()
+			})
 	}
 }
 
@@ -108,7 +105,6 @@ pub unsafe trait Dyncast {
 	#[doc(hidden)]
 	fn __dyncast(
 		&self,
-	) -> fn(
 		this: NonNull<()>,
 		target: TypeId,
 	) -> Option<MaybeUninit<[u8; mem::size_of::<&dyn Dyncast>()]>>;

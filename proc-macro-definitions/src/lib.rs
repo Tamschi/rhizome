@@ -187,19 +187,20 @@ fn implement_dyncast(
 		.flatten()
 		.collect::<Vec<_>>();
 
-	struct SelfReplacer(Type);
-	impl VisitMut for SelfReplacer {
-		fn visit_type_mut(&mut self, t: &mut Type) {
-			match t {
-				Type::Path(tp) if tp.qself == None && tp.path.is_ident("Self") => {
-					*t = self.0.clone()
+	// This is required for the const assertion.
+	for target in &mut targets {
+		struct SelfReplacer(Type);
+		impl VisitMut for SelfReplacer {
+			fn visit_type_mut(&mut self, t: &mut Type) {
+				match t {
+					Type::Path(tp) if tp.qself == None && tp.path.is_ident("Self") => {
+						*t = self.0.clone()
+					}
+					t => visit_mut::visit_type_mut(self, t),
 				}
-				t => visit_mut::visit_type_mut(self, t),
 			}
 		}
-	}
 
-	for target in &mut targets {
 		SelfReplacer({
 			call2_strict(
 				quote_spanned!(Span::mixed_site()=> #dyn_ #ident#type_generics),
@@ -222,7 +223,6 @@ fn implement_dyncast(
 		{
 			fn __dyncast(
 				&self,
-			) -> fn(
 				this: ::core::ptr::NonNull<()>,
 				target: ::std::any::TypeId,
 			) -> ::core::option::Option<
@@ -230,7 +230,7 @@ fn implement_dyncast(
 					[::core::primitive::u8; ::core::mem::size_of::<&dyn ::#rhizome::Dyncast>()]
 				>
 			> {
-				|this, target| #(if target == ::std::any::TypeId::of::<#targets>() {
+				#(if target == ::std::any::TypeId::of::<#targets>() {
 					::#rhizome::__::const_assert!(::core::mem::size_of::<*mut #targets>() <= ::core::mem::size_of::<&dyn Dyncast>());
 					::core::option::Option::Some(unsafe {
 						let mut result_memory = ::core::mem::MaybeUninit::<[u8; ::core::mem::size_of::<&dyn Dyncast>()]>::uninit();
@@ -238,7 +238,7 @@ fn implement_dyncast(
 							.as_mut_ptr()
 							.cast::<::core::ptr::NonNull<#targets>>()
 							.write_unaligned(::core::ptr::NonNull::<#targets>::new_unchecked(
-								this.cast::<#dyn_ #ident#type_generics>().as_ptr() as *mut #targets
+								this.cast::<Self>().as_ptr() as *mut #targets
 							)
 						);
 						result_memory
