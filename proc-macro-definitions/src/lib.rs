@@ -19,7 +19,7 @@ use syn::{
 	parse_macro_input,
 	punctuated::Punctuated,
 	Attribute, Error, Generics, Ident, Item, Lifetime, PredicateType, Result, Token, Type,
-	TypeParamBound, TypePath, WhereClause, WherePredicate,
+	TypeParamBound, WhereClause, WherePredicate,
 };
 use tap::Pipe;
 
@@ -151,7 +151,7 @@ fn implement_dyncast(
 		},
 	}));
 
-	let targets = attributes
+	let targets: Vec<Type> = attributes
 		.iter()
 		.filter(|attribute| {
 			attribute.path.is_ident("dyncast")
@@ -160,7 +160,7 @@ fn implement_dyncast(
 					&& attribute.path.segments[0].ident == "rhizome"
 					&& attribute.path.segments[1].ident == "dyncast"
 		})
-		.flat_map(|attribute| {
+		.map(|attribute| {
 			for segment in &attribute.path.segments {
 				if !segment.arguments.is_empty() {
 					attribute_errors.push(
@@ -174,12 +174,15 @@ fn implement_dyncast(
 			call2_strict(attribute.tokens.clone(), |input| {
 				let contents;
 				parenthesized!(contents in input);
-				let targets = Punctuated::<TypePath, Token![,]>::parse_terminated(&contents)?;
+				let targets = Punctuated::<Type, Token![,]>::parse_terminated(&contents)?;
 				Ok(targets)
-			})
+			}).unwrap(/*FIXME: Fail better! */)
 		})
 		.collect::<Result<Vec<_>>>()
-		.unwrap(/*FIXME: Fail better! */);
+		.unwrap(/*FIXME: Fail better! */)
+		.into_iter()
+		.flatten()
+		.collect::<Vec<_>>();
 
 	quote_spanned! {Span::mixed_site()=>
 		#(#attribute_errors)*
@@ -187,67 +190,28 @@ fn implement_dyncast(
 		/// # Targets
 		///
 		#(#[doc = concat!("- `", stringify!(#targets), "`")])*
-		impl#impl_generics ::#rhizome::Dyncast for #dyn_ #ident#type_generics
+		unsafe impl#impl_generics ::#rhizome::DyncastObject for #dyn_ #ident#type_generics
 			#where_clause
 		{
-			fn dyncast<T: 'static + ?Sized>(
-				&self
-			) -> ::core::option::Option<&T> {
-				#(if ::std::any::TypeId::of::<T>() == ::std::any::TypeId::of::<#targets>() {
+			fn __dyncast(
+				&self,
+			) -> fn(
+				this: ::core::ptr::NonNull<()>,
+				target: ::std::any::TypeId,
+			) -> ::core::option::Option<
+				::core::mem::MaybeUninit<
+					[::core::primitive::u8; ::core::mem::size_of::<&dyn ::#rhizome::DyncastObject>()]
+				>
+			> {
+				|this, target| #(if target == ::std::any::TypeId::of::<#targets>() {
 					::core::option::Option::Some(unsafe {
-						(
-							&(self as &#targets)
-							as *const &#targets
-							as *const &T
-						).read()
-					})
-				} else)* {
-					None
-				}
-			}
-
-			fn dyncast_mut<T: 'static + ?Sized>(
-				&mut self
-			) -> ::core::option::Option<&mut T> {
-				#(if ::std::any::TypeId::of::<T>() == ::std::any::TypeId::of::<#targets>() {
-					::core::option::Option::Some(unsafe {
-						(
-							&(self as &mut #targets)
-							as *const &mut #targets
-							as *const &mut T
-						).read()
-					})
-				} else)* {
-					None
-				}
-			}
-
-			fn dyncast_pinned<'a, T: 'static + ?Sized>(
-				self: ::core::pin::Pin<&'a Self>
-			) -> ::core::option::Option<::core::pin::Pin<&'a T>> {
-				#(if ::std::any::TypeId::of::<T>() == ::std::any::TypeId::of::<#targets>() {
-					::core::option::Option::Some(unsafe {
-						(
-							&(self as ::core::pin::Pin<&#targets>)
-							as *const ::core::pin::Pin<&#targets>
-							as *const ::core::pin::Pin<&T>
-						).read()
-					})
-				} else)* {
-					None
-				}
-			}
-
-			fn dyncast_pinned_mut<'a, T: 'static + ?Sized>(
-				self: ::core::pin::Pin<&'a mut Self>
-			) -> ::core::option::Option<::core::pin::Pin<&'a mut T>> {
-				#(if ::std::any::TypeId::of::<T>() == ::std::any::TypeId::of::<#targets>() {
-					::core::option::Option::Some(unsafe {
-						(
-							&(self as ::core::pin::Pin<&mut #targets>)
-							as *const ::core::pin::Pin<&mut #targets>
-							as *const ::core::pin::Pin<&mut T>
-						).read()
+						assert!(::core::mem::size_of::<&#targets>() <= ::core::mem::size_of::<&dyn DyncastObject>());
+						let mut result_memory = ::core::mem::MaybeUninit::<[u8; ::core::mem::size_of::<&dyn DyncastObject>()]>::uninit();
+						result_memory
+							.as_mut_ptr()
+							.cast::<&#targets>()
+							.write_unaligned(this.cast::<Self>().as_ref() as &#targets);
+						result_memory
 					})
 				} else)* {
 					None
