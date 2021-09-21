@@ -16,10 +16,11 @@ publish = false
 proc-macro = true
 
 [dependencies]
+call2-for-syn = "2.0.3"
 lazy_static = "1.4.0"
-quote = "1.0.2"
 proc-macro-crate = "1.0.0"
 proc-macro2 = "1.0.29"
+quote = "1.0.2"
 syn-mid = "0.5.0"
 syn = { version = "1.0.76", features = ["full"] }
 tap = "1.0.1"

@@ -15,6 +15,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9df67f7bf9ef8498769f994239c45613ef0c5899415fb58e9add412d2c1a538"
 
 [[package]]
+name = "call2-for-syn"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abe198907637ba191a05037eabf6a1e81ce35617ea282ab091009f22664fd433"
+dependencies = [
+ "proc-macro2",
+ "rustversion",
+ "syn",
+]
+
+[[package]]
 name = "cargo-husky"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,6 +284,7 @@ dependencies = [
 name = "rhizome_proc-macro-definitions"
 version = "0.0.1"
 dependencies = [
+ "call2-for-syn",
  "lazy_static",
  "proc-macro-crate",
  "proc-macro2",
@@ -282,6 +294,12 @@ dependencies = [
  "tap",
  "version-sync",
 ]
+
+[[package]]
+name = "rustversion"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61b3909d758bb75c79f23d4736fac9433868679d3ad2ea7a61e3c25cfda9a088"
 
 [[package]]
 name = "scoped-tls"

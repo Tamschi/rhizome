@@ -1,3 +1,5 @@
+#![cfg(FALSE)]
+
 use core::cell::RefCell;
 use rhizome::sync::{extensions::*, Node, TypeKey};
 use std::{any::TypeId, convert::Infallible};
