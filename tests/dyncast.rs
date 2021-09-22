@@ -5,10 +5,11 @@ use std::fmt::Debug;
 
 #[derive(Debug, Dyncast)]
 #[dyncast(dyn Debug, Self)]
+#[dyncast(dyn Debug, Self)]
 struct Test;
 
 #[derive(Debug, Dyncast)]
-#[dyncast(dyn Debug)]
+#[dyncast(dyn Debug, unsafe Test)]
 struct Test2(String);
 
 #[test]

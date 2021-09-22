@@ -154,7 +154,7 @@ fn implement_dyncast(
 		},
 	}));
 
-	let mut targets: Vec<Type> = attributes
+	let (target_errors, mut targets): (Vec<_>, Vec<Type>) = attributes
 		.iter()
 		.filter(|attribute| {
 			attribute.path.is_ident("dyncast")
@@ -177,7 +177,7 @@ fn implement_dyncast(
 			call2_strict(attribute.tokens.clone(), |input| {
 				let contents;
 				parenthesized!(contents in input);
-				let targets = Punctuated::<Type, Token![,]>::parse_terminated(&contents)?;
+				let targets = Punctuated::<DyncastTarget, Token![,]>::parse_terminated(&contents)?;
 				Ok(targets)
 			}).unwrap(/*FIXME: Fail better! */)
 		})
@@ -185,18 +185,18 @@ fn implement_dyncast(
 		.unwrap(/*FIXME: Fail better! */)
 		.into_iter()
 		.flatten()
-		.collect::<Vec<_>>();
+		.map(|dyncast_target| (dyncast_target.diagnostics(), dyncast_target.1))
+		.unzip();
 
 	// This is required for the const assertion.
 	for target in &mut targets {
 		struct SelfReplacer(Type);
 		impl VisitMut for SelfReplacer {
 			fn visit_type_mut(&mut self, t: &mut Type) {
-				match t {
-					Type::Path(tp) if tp.qself == None && tp.path.is_ident("Self") => {
-						*t = self.0.clone()
-					}
-					t => visit_mut::visit_type_mut(self, t),
+				if is_self_type(t) {
+					*t = self.0.clone()
+				} else {
+					visit_mut::visit_type_mut(self, t)
 				}
 			}
 		}
@@ -231,6 +231,7 @@ fn implement_dyncast(
 				>
 			> {
 				#(if target == ::std::any::TypeId::of::<#targets>() {
+					#target_errors
 					::#rhizome::__::const_assert!(::core::mem::size_of::<*mut #targets>() <= ::core::mem::size_of::<&dyn Dyncast>());
 					::core::option::Option::Some(unsafe {
 						let mut result_memory = ::core::mem::MaybeUninit::<[u8; ::core::mem::size_of::<&dyn Dyncast>()]>::uninit();
@@ -248,6 +249,34 @@ fn implement_dyncast(
 				}
 			}
 		}
+	}
+}
+
+fn is_self_type(t: &Type) -> bool {
+	matches!(t, Type::Path(tp) if tp.qself == None && tp.path.is_ident("Self"))
+}
+
+#[derive(Debug)]
+struct DyncastTarget(Option<Token![unsafe]>, Type);
+impl Parse for DyncastTarget {
+	fn parse(input: ParseStream) -> Result<Self> {
+		Ok(Self(input.parse().unwrap(), input.parse()?))
+	}
+}
+impl DyncastTarget {
+	fn diagnostics(&self) -> impl 'static + ToTokens {
+		if self.0 == None && !matches!(&self.1, Type::TraitObject(_)) && !is_self_type(&self.1) {
+			Error::new_spanned(&self.1, "This cast requires an `unsafe` prefix.")
+				.into_compile_error()
+		} else if self.0.is_some()
+			&& (matches!(&self.1, Type::TraitObject(_)) || is_self_type(&self.1))
+		{
+			let unsafe_ = self.0.as_ref().unwrap();
+			quote_spanned!(unsafe_.span=> #unsafe_ {})
+		} else {
+			return None;
+		}
+		.pipe(Some)
 	}
 }
 
