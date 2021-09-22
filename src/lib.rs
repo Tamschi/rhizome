@@ -14,7 +14,7 @@ pub mod readme {
 
 use std::convert::Infallible;
 
-mod dyncast;
+pub mod dyncast;
 pub mod error;
 pub mod friendly_names;
 pub mod sync;

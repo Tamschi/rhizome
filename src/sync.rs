@@ -1,6 +1,6 @@
 //! A threading-compatible implementation.
 
-use crate::UnwrapInfallible;
+use crate::{Dyncast, UnwrapInfallible};
 use core::any::{Any, TypeId};
 use pinus::{prelude::*, sync::PressedPineMap};
 use std::{borrow::Borrow, pin::Pin, sync::Arc};
@@ -55,13 +55,13 @@ pub mod extensions {
 }
 
 /// A thread-safe tagged inverse tree node.
-pub struct Node<Value: ?Sized = dyn Any, Key: Ord = TypeId, Tag = TypeId> {
+pub struct Node<Value: ?Sized = dyn Dyncast, Key: Ord = TypeId, Tag = TypeId> {
 	parent: Option<Arc<Node<Value, Key, Tag>>>,
 	tag: Tag,
 	local_scope: Pin<PressedPineMap<Key, Value>>,
 }
 
-impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
+impl<Value: ?Sized, Key: Ord, Tag> Node<Value, Key, Tag> {
 	/// Creates a new root-[`Node`] with tag `tag`.
 	#[must_use]
 	pub fn new(tag: Tag) -> Self {
@@ -78,7 +78,10 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide(&self, key: Key, value: Value) -> Result<Pin<&Value>, (Key, Value)> {
+	pub fn provide(&self, key: Key, value: Value) -> Result<Pin<&Value>, (Key, Value)>
+	where
+		Value: Sized,
+	{
 		self.local_scope.insert(key, value)
 	}
 
@@ -90,7 +93,10 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide_mut(&mut self, key: Key, value: Value) -> Result<Pin<&mut Value>, (Key, Value)> {
+	pub fn provide_mut(&mut self, key: Key, value: Value) -> Result<Pin<&mut Value>, (Key, Value)>
+	where
+		Value: Sized,
+	{
 		self.local_scope.insert_mut(key, value)
 	}
 
@@ -260,7 +266,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 }
 
 /// TODO
-pub trait TypeKey<Value = Box<dyn Any>, Tag = TypeId>
+pub trait TypeKey<Value: ?Sized = dyn Dyncast, Tag = TypeId>
 where
 	Self: 'static,
 {
@@ -281,6 +287,7 @@ where
 	}
 
 	fn select(node: &Node<Value, TypeId, Tag>) -> Result<Option<Pin<&Value>>, Self::Error> {
-		node.try_find_extract(Self::select_local)
+		todo!()
+		// node.try_find_extract(Self::select_local)
 	}
 }
