@@ -14,12 +14,9 @@ pub mod readme {
 
 use std::convert::Infallible;
 
-pub mod dyncast;
 pub mod error;
 pub mod friendly_names;
 pub mod sync;
-
-pub use dyncast::Dyncast;
 
 #[cfg(feature = "macros")]
 pub use dyncast::implement_dyncasts;

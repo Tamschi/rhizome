@@ -1,9 +1,9 @@
 //! A threading-compatible implementation.
 
-use crate::{Dyncast, UnwrapInfallible};
-use core::any::{Any, TypeId};
+use crate::UnwrapInfallible;
+use core::any::TypeId;
 use pinus::{prelude::*, sync::PressedPineMap};
-use std::{borrow::Borrow, pin::Pin, sync::Arc};
+use std::{any::Any, borrow::Borrow, pin::Pin, sync::Arc};
 use tap::Pipe;
 
 #[cfg(feature = "macros")]
@@ -13,7 +13,6 @@ pub use crate::TypeKey;
 pub mod extensions {
 	use super::{Arc, Node, TypeId};
 	use pinus::{prelude::*, sync::PressedPineMap};
-	use std::pin::Pin;
 
 	/// Provides the [`.branch_for`](`BranchFor::branch_for`) and [`.branch_for`](`BranchFor::into_branch_for`) methods.
 	pub trait BranchFor<Value, Key: Ord, Tag> {
@@ -55,7 +54,7 @@ pub mod extensions {
 }
 
 /// A thread-safe tagged inverse tree node.
-pub struct Node<Value: ?Sized = dyn Dyncast, Key: Ord = TypeId, Tag = TypeId> {
+pub struct Node<Value: ?Sized = dyn Any, Key: Ord = TypeId, Tag = TypeId> {
 	parent: Option<Arc<Node<Value, Key, Tag>>>,
 	tag: Tag,
 	local_scope: Pin<PressedPineMap<Key, Value>>,
@@ -160,30 +159,6 @@ impl<Value, Key: Ord> Node<Value, Key, TypeId> {
 	}
 }
 
-impl<Value, Tag: PartialEq> Node<Value, TypeId, Tag> {
-	/// Extracts a value from the node tree according to the given type key.
-	///
-	/// # Errors
-	///
-	/// Iff no value could be extracted.
-	pub fn get_by_type_key<Key: TypeKey<Value, Tag>>(
-		&self,
-	) -> Result<Option<Pin<&Value>>, Key::Error> {
-		Key::select(self)
-	}
-
-	/// Extracts a value from the node tree according to the given type key.
-	///
-	/// # Errors
-	///
-	/// Iff no value could be extracted.
-	pub fn get_local_by_type_key<Key: TypeKey<Value, Tag>>(
-		&self,
-	) -> Result<Option<Pin<&Value>>, Key::Error> {
-		Key::select_local(self)
-	}
-}
-
 //TODO: Set up Error enum. (with variants for missing keys and other errors).
 //TRACKING: K must be clone until entry_insert/https://github.com/rust-lang/rust/issues/65225 lands.
 impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
@@ -194,7 +169,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 		Key: Borrow<Q>,
 		Q: Ord + ?Sized,
 	{
-		self.try_find_extract(|node| node.local_scope.get(key).pipe(Ok))
+		self.try_find(|node| node.local_scope.get(key).pipe(Ok))
 			.unwrap_infallible()
 	}
 
@@ -227,7 +202,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 		&self,
 		local_selector: S,
 	) -> Option<Pin<&Value>> {
-		self.try_find_extract(|node| Ok(local_selector(node)))
+		self.try_find(|node| Ok(local_selector(node)))
 			.unwrap_infallible()
 	}
 
@@ -246,8 +221,7 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	/// # Panics
 	///
 	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
-	#[must_use]
-	pub fn try_find_extract<S: Fn(&Node<Value, Key, Tag>) -> Result<Option<Pin<&Value>>, E>, E>(
+	pub fn try_find<S: Fn(&Node<Value, Key, Tag>) -> Result<Option<Pin<&Value>>, E>, E>(
 		&self,
 		local_selector: S,
 	) -> Result<Option<Pin<&Value>>, E> {
@@ -263,31 +237,6 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 		}
 		.pipe(Ok)
 	}
-}
 
-/// TODO
-pub trait TypeKey<Value: ?Sized = dyn Dyncast, Tag = TypeId>
-where
-	Self: 'static,
-{
-	#[must_use]
-	fn key() -> TypeId {
-		TypeId::of::<Self>()
-	}
-
-	/// Unless you have a good reason not to, use [`crate::error::Error`]!
-	///
-	/// It comes with friendly backtrace functionality not available elsewhere.
-	type Error;
-
-	fn select_local(
-		_queried_node: &Node<Value, TypeId, Tag>,
-	) -> Result<Option<Pin<&Value>>, Self::Error> {
-		Ok(None)
-	}
-
-	fn select(node: &Node<Value, TypeId, Tag>) -> Result<Option<Pin<&Value>>, Self::Error> {
-		todo!()
-		// node.try_find_extract(Self::select_local)
-	}
+	//TODO: `search`, `try_search`
 }

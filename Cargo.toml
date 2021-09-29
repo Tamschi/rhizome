@@ -1,11 +1,7 @@
 [workspace]
 members = [
 	".",
-	"proc-macro-definitions",
 ]
-
-[patch.crates-io]
-rhizome_proc-macro-definitions = { path = "proc-macro-definitions" }
 
 [package]
 name = "rhizome"
@@ -38,13 +34,8 @@ is-it-maintained-issue-resolution = { repository = "Tamschi/rhizome" }
 is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
 maintenance = { status = "experimental" } # This may differ between branches.
 
-[features]
-macros = ["static_assertions", "rhizome_proc-macro-definitions"]
-
 [dependencies]
 pinus = "0.0.3"
-rhizome_proc-macro-definitions = { version = "0.0.1", optional = true } #public
-static_assertions = { version = "1.1.0", optional = true }
 static_init = { path = "../static_init", version = "1.0.1" }
 tap = "1.0.1"
 tracing = "0.1.26"
