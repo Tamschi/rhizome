@@ -116,7 +116,46 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace_with<W, F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Pin<&'a mut V>>(
+	pub fn emplace_with<W, F: for<'a> FnOnce(&K, &'a mut MaybeUninit<W>) -> &'a mut V>(
+		&self,
+		key: K,
+		value_factory: F,
+	) -> Result<Pin<&V>, (K, F)> {
+		self.local_scope
+			.as_unpinned()
+			.emplace_with(key, value_factory)
+			.map(|v| unsafe { Pin::new_unchecked(v) })
+	}
+
+	/// Stores `value` for `key` at the current [`Node`].
+	///
+	/// # Errors
+	///
+	/// Iff the local scope already contains a value for `key`.
+	pub fn try_emplace_with<
+		W,
+		F: for<'a> FnOnce(&K, &'a mut MaybeUninit<W>) -> Result<&'a mut V, E>,
+		E,
+	>(
+		&self,
+		key: K,
+		value_factory: F,
+	) -> Result<Result<Pin<&V>, (K, F)>, E> {
+		self.local_scope
+			.as_unpinned()
+			.try_emplace_with(key, value_factory)
+			.map(|inner_result| inner_result.map(|v| unsafe { Pin::new_unchecked(v) }))
+	}
+
+	/// Stores `value` for `key` at the current [`Node`].
+	///
+	/// # Errors
+	///
+	/// Iff the local scope already contains a value for `key`.
+	pub fn emplace_with_pinning<
+		W,
+		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Pin<&'a mut V>,
+	>(
 		&self,
 		key: K,
 		value_factory: F,
@@ -129,7 +168,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn try_emplace_with<
+	pub fn try_emplace_with_pinning<
 		W,
 		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Result<Pin<&'a mut V>, E>,
 		E,

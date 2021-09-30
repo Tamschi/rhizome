@@ -33,4 +33,26 @@ fn test() {
 		third_b.get("at root").unwrap().1.dyncast::<A>(),
 		Some(A("at root"))
 	));
+
+	third_a
+		.tagged(&2)
+		.unwrap()
+		.emplace_with("at 2", |key, slot| slot.write(A(key)))
+		.ok()
+		.unwrap();
+	assert!(matches!(
+		third_b.get("at root").unwrap().1.dyncast::<A>(),
+		Some(A("at root"))
+	));
+	assert!(matches!(
+		third_b.get("at 2").unwrap().1.dyncast::<A>(),
+		Some(A("at 2"))
+	));
+
+	third_a.emplace("at third", A("at third (a only)")).unwrap();
+	assert!(matches!(third_b.get("at third"), None));
+	assert!(matches!(
+		third_a.get("at third").unwrap().1.dyncast::<A>(),
+		Some(A("at third (a only)"))
+	));
 }
