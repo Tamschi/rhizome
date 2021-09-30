@@ -3,7 +3,12 @@
 use crate::UnwrapInfallible;
 use core::any::TypeId;
 use pinus::{prelude::*, sync::PressedPineMap};
-use std::{borrow::Borrow, pin::Pin, sync::Arc};
+use std::{
+	borrow::{Borrow, BorrowMut},
+	mem::MaybeUninit,
+	pin::Pin,
+	sync::Arc,
+};
 use tap::Pipe;
 
 #[cfg(feature = "macros")]
@@ -87,12 +92,53 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
 	pub fn insert(&self, key: K, value: V) -> Result<Pin<&V>, (K, V)>
 	where
 		V: Sized,
 	{
 		self.local_scope.insert(key, value)
+	}
+
+	/// Stores `value` for `key` at the current [`Node`].
+	///
+	/// # Errors
+	///
+	/// Iff the local scope already contains a value for `key`.
+	pub fn emplace<W>(&self, key: K, value: W) -> Result<Pin<&V>, (K, W)>
+	where
+		W: BorrowMut<V>,
+	{
+		self.local_scope.emplace(key, value)
+	}
+
+	/// Stores `value` for `key` at the current [`Node`].
+	///
+	/// # Errors
+	///
+	/// Iff the local scope already contains a value for `key`.
+	pub fn emplace_with<W, F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Pin<&'a mut V>>(
+		&self,
+		key: K,
+		value_factory: F,
+	) -> Result<Pin<&V>, (K, F)> {
+		self.local_scope.emplace_with(key, value_factory)
+	}
+
+	/// Stores `value` for `key` at the current [`Node`].
+	///
+	/// # Errors
+	///
+	/// Iff the local scope already contains a value for `key`.
+	pub fn try_emplace_with<
+		W,
+		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Result<Pin<&'a mut V>, E>,
+		E,
+	>(
+		&self,
+		key: K,
+		value_factory: F,
+	) -> Result<Result<Pin<&V>, (K, F)>, E> {
+		self.local_scope.try_emplace_with(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current [`Node`].
