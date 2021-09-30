@@ -3,7 +3,7 @@
 use crate::UnwrapInfallible;
 use core::any::TypeId;
 use pinus::{prelude::*, sync::PressedPineMap};
-use std::{any::Any, borrow::Borrow, pin::Pin, sync::Arc};
+use std::{borrow::Borrow, pin::Pin, sync::Arc};
 use tap::Pipe;
 
 #[cfg(feature = "macros")]
@@ -15,17 +15,17 @@ pub mod extensions {
 	use pinus::{prelude::*, sync::PressedPineMap};
 
 	/// Provides the [`.branch_for`](`BranchFor::branch_for`) and [`.branch_for`](`BranchFor::into_branch_for`) methods.
-	pub trait BranchFor<Value, Key: Ord, Tag> {
+	pub trait BranchFor<T, K: Ord, V: ?Sized> {
 		/// Creates a new [`Node`] instance referencing the current one.
-		fn branch_for(&self, tag: Tag) -> Node<Value, Key, Tag>;
+		fn branch_for(&self, tag: T) -> Node<T, K, V>;
 		/// Creates a new [`Node`] instance referencing the current one, without cloning this [`Arc`].
-		fn into_branch_for(self, tag: Tag) -> Node<Value, Key, Tag>;
+		fn into_branch_for(self, tag: T) -> Node<T, K, V>;
 	}
-	impl<Value, Key: Ord, Tag> BranchFor<Value, Key, Tag> for Arc<Node<Value, Key, Tag>> {
-		fn branch_for(&self, tag: Tag) -> Node<Value, Key, Tag> {
+	impl<T, K: Ord, V: ?Sized> BranchFor<T, K, V> for Arc<Node<T, K, V>> {
+		fn branch_for(&self, tag: T) -> Node<T, K, V> {
 			Arc::clone(self).into_branch_for(tag)
 		}
-		fn into_branch_for(self, tag: Tag) -> Node<Value, Key, Tag> {
+		fn into_branch_for(self, tag: T) -> Node<T, K, V> {
 			Node {
 				parent: Some(self),
 				tag,
@@ -35,35 +35,35 @@ pub mod extensions {
 	}
 
 	/// Provides the [`.branch_with_type_tag`](`BranchWithTypeTag::branch_with_type_tag`) and [`.into_branch_for_type`](`BranchWithTypeTag::into_branch_with_type_tag`) methods.
-	pub trait BranchWithTypeTag<Value, Key: Ord>: BranchFor<Value, Key, TypeId> {
+	pub trait BranchWithTypeTag<K: Ord, V: ?Sized>: BranchFor<TypeId, K, V> {
 		/// Creates a new [`Node`] instance referencing the current one, tagged with the [`TypeId`] of `Tag`.
-		fn branch_with_type_tag<Tag: 'static>(&self) -> Node<Value, Key, TypeId>;
+		fn branch_with_type_tag<Tag: 'static>(&self) -> Node<TypeId, K, V>;
 		/// Creates a new [`Node`] instance referencing the current one, tagged with the [`TypeId`] of `Tag`, without cloning this [`Arc`].
-		fn into_branch_with_type_tag<Tag: 'static>(self) -> Node<Value, Key, TypeId>;
+		fn into_branch_with_type_tag<Tag: 'static>(self) -> Node<TypeId, K, V>;
 	}
-	impl<Value, Key: Ord> BranchWithTypeTag<Value, Key> for Arc<Node<Value, Key, TypeId>> {
+	impl<K: Ord, V: ?Sized> BranchWithTypeTag<K, V> for Arc<Node<TypeId, K, V>> {
 		#[inline]
-		fn branch_with_type_tag<Tag: 'static>(&self) -> Node<Value, Key, TypeId> {
+		fn branch_with_type_tag<Tag: 'static>(&self) -> Node<TypeId, K, V> {
 			self.branch_for(TypeId::of::<Tag>())
 		}
 		#[inline]
-		fn into_branch_with_type_tag<Tag: 'static>(self) -> Node<Value, Key, TypeId> {
+		fn into_branch_with_type_tag<Tag: 'static>(self) -> Node<TypeId, K, V> {
 			self.into_branch_for(TypeId::of::<Tag>())
 		}
 	}
 }
 
 /// A thread-safe tagged inverse tree node.
-pub struct Node<Value: ?Sized = dyn Any, Key: Ord = TypeId, Tag = TypeId> {
-	parent: Option<Arc<Node<Value, Key, Tag>>>,
-	tag: Tag,
-	local_scope: Pin<PressedPineMap<Key, Value>>,
+pub struct Node<T, K: Ord, V: ?Sized> {
+	parent: Option<Arc<Node<T, K, V>>>,
+	tag: T,
+	local_scope: Pin<PressedPineMap<K, V>>,
 }
 
-impl<Value: ?Sized, Key: Ord, Tag> Node<Value, Key, Tag> {
+impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Creates a new root-[`Node`] with tag `tag`.
 	#[must_use]
-	pub fn new(tag: Tag) -> Self {
+	pub fn new(tag: T) -> Self {
 		Self {
 			parent: None,
 			tag,
@@ -77,9 +77,9 @@ impl<Value: ?Sized, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide(&self, key: Key, value: Value) -> Result<Pin<&Value>, (Key, Value)>
+	pub fn insert(&self, key: K, value: V) -> Result<Pin<&V>, (K, V)>
 	where
-		Value: Sized,
+		V: Sized,
 	{
 		self.local_scope.insert(key, value)
 	}
@@ -92,9 +92,9 @@ impl<Value: ?Sized, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn provide_mut(&mut self, key: Key, value: Value) -> Result<Pin<&mut Value>, (Key, Value)>
+	pub fn insert_mut(&mut self, key: K, value: V) -> Result<Pin<&mut V>, (K, V)>
 	where
-		Value: Sized,
+		V: Sized,
 	{
 		self.local_scope.insert_mut(key, value)
 	}
@@ -124,7 +124,7 @@ impl<Value: ?Sized, Key: Ord, Tag> Node<Value, Key, Tag> {
 	#[must_use]
 	pub fn tagged<Q>(&self, tag: &Q) -> Option<&Self>
 	where
-		Tag: Borrow<Q>,
+		T: Borrow<Q>,
 		Q: PartialEq + ?Sized,
 	{
 		let mut this = self;
@@ -137,7 +137,7 @@ impl<Value: ?Sized, Key: Ord, Tag> Node<Value, Key, Tag> {
 	}
 }
 
-impl<Value, Key: Ord> Node<Value, Key, TypeId> {
+impl<K: Ord, V: ?Sized> Node<TypeId, K, V> {
 	/// Creates a new root-[`Node`] tagged with `Tag`'s [`TypeId`].
 	///
 	/// # Tracing
@@ -161,30 +161,29 @@ impl<Value, Key: Ord> Node<Value, Key, TypeId> {
 
 //TODO: Set up Error enum. (with variants for missing keys and other errors).
 //TRACKING: K must be clone until entry_insert/https://github.com/rust-lang/rust/issues/65225 lands.
-impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
-	/// Extracts a value from the [`Node`] tree according to the given `key`.
-	#[must_use]
-	pub fn get<Q>(&self, key: &Q) -> Option<Pin<&Value>>
-	where
-		Key: Borrow<Q>,
-		Q: Ord + ?Sized,
-	{
-		self.try_find(|node| node.local_scope.get(key).pipe(Ok))
-			.unwrap_infallible()
-	}
-
+impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Extracts a value from this [`Node`] only according to the given `key`.
 	///
 	/// # Panics
 	///
 	/// Iff this [`Node`] is poisoned.
 	#[must_use]
-	pub fn get_local<Q>(&self, key: &Q) -> Option<Pin<&Value>>
+	pub fn get_local<Q>(&self, key: &Q) -> Option<Pin<&V>>
 	where
-		Key: Borrow<Q>,
+		K: Borrow<Q>,
 		Q: Ord + ?Sized,
 	{
 		self.local_scope.get(key)
+	}
+
+	/// Extracts a value from the [`Node`] tree according to the given `key`.
+	#[must_use]
+	pub fn get<Q>(&self, key: &Q) -> Option<(&Self, Pin<&V>)>
+	where
+		K: Borrow<Q>,
+		Q: Ord + ?Sized,
+	{
+		self.find(|node| node.get_local(key))
 	}
 
 	/// Extracts a value from the node tree according to the given `selector`.
@@ -198,10 +197,10 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	///
 	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
 	#[must_use]
-	pub fn find<S: Fn(&Node<Value, Key, Tag>) -> Option<Pin<&Value>>>(
+	pub fn find<S: Fn(&Node<T, K, V>) -> Option<Pin<&V>>>(
 		&self,
 		local_selector: S,
-	) -> Option<Pin<&Value>> {
+	) -> Option<(&Self, Pin<&V>)> {
 		self.try_find(|node| Ok(local_selector(node)))
 			.unwrap_infallible()
 	}
@@ -221,14 +220,14 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 	/// # Panics
 	///
 	/// Not directly, but if a poisoned [`Node`] is reached, then `selector` is likely to panic.
-	pub fn try_find<S: Fn(&Node<Value, Key, Tag>) -> Result<Option<Pin<&Value>>, E>, E>(
+	pub fn try_find<S: Fn(&Node<T, K, V>) -> Result<Option<Pin<&V>>, E>, E>(
 		&self,
 		local_selector: S,
-	) -> Result<Option<Pin<&Value>>, E> {
+	) -> Result<Option<(&Self, Pin<&V>)>, E> {
 		let mut this = self;
 		loop {
-			if let found @ Some(_) = local_selector(this)? {
-				break found;
+			if let Some(found) = local_selector(this)? {
+				break Some((this, found));
 			} else if let Some(parent) = this.parent() {
 				this = parent
 			} else {
@@ -238,5 +237,5 @@ impl<Value, Key: Ord, Tag> Node<Value, Key, Tag> {
 		.pipe(Ok)
 	}
 
-	//TODO: `search`, `try_search`
+	//TODO: `search` and `try_search`, which should iterate using repeat `find` and/or `try_find` calls.
 }
