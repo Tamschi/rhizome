@@ -71,6 +71,17 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		}
 	}
 
+	/// Creates a new root-[`Node`] with tag `tag` that will store values (almost) contiguously
+	/// until `capacity` (in bytes that are the size of a maximally aligned buffer!) are exceeded.
+	#[must_use]
+	pub fn with_capacity(tag: T, capacity: usize) -> Self {
+		Self {
+			parent: None,
+			tag,
+			local_scope: PressedPineMap::with_capacity(capacity).pin(),
+		}
+	}
+
 	/// Stores `value` for `key` at the current [`Node`].
 	///
 	/// # Errors
