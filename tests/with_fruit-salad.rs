@@ -30,7 +30,7 @@ fn test() {
 
 	third_a.root().emplace("at root", A("at root")).unwrap();
 	assert!(matches!(
-		third_b.get("at root").unwrap().1.dyncast::<A>().unwrap(),
-		A("at root")
+		third_b.get("at root").unwrap().1.dyncast::<A>(),
+		Some(A("at root"))
 	));
 }
