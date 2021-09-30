@@ -21,7 +21,7 @@ impl<'a> BorrowMut<dyn 'a + Dyncast> for A {
 
 #[test]
 fn test() {
-	let root = Node::<_, &str, dyn Dyncast>::new(1).into_arc();
+	let root = Node::<_, _, dyn Dyncast>::new(1).into_arc();
 
 	let second = root.into_branch_for(2).into_arc();
 
