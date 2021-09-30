@@ -67,7 +67,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		Self {
 			parent: None,
 			tag,
-			local_scope: PressedPineMap::default().pin(),
+			local_scope: PressedPineMap::new().pin(),
 		}
 	}
 
