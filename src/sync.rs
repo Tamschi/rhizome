@@ -10,7 +10,7 @@ use std::{
 	sync::Arc,
 };
 use tap::Pipe;
-use this_is_fine::{prelude::*, Fine};
+use this_is_fine::Fine;
 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
@@ -122,10 +122,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&V>, (K, F)> {
-		self.local_scope
-			.as_unpinned()
-			.emplace_with(key, value_factory)
-			.map(|v| unsafe { Pin::new_unchecked(v) })
+		self.local_scope.emplace_with_unpinned(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current [`Node`].
@@ -143,9 +140,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		value_factory: F,
 	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
 		self.local_scope
-			.as_unpinned()
-			.try_emplace_with(key, value_factory)
-			.map(|inner_result| inner_result.map(|v| unsafe { Pin::new_unchecked(v) }))
+			.try_emplace_with_unpinned(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current [`Node`].
