@@ -1,7 +1,7 @@
 #![cfg(FALSE)]
 
 use core::cell::RefCell;
-use rhizome::sync::{extensions::*, Node, TypeKey};
+use rhizome::sync::NodeHandle;
 use std::{any::TypeId, convert::Infallible};
 use tap::Pipe;
 
@@ -9,7 +9,7 @@ type V = RefCell<u8>;
 
 #[test]
 fn shared_at_root() {
-	let root = Node::<V>::new_with_type_tag::<RootOwner>().into_arc();
+	let root = NodeHandle::<_, _, V>::new_with_type_tag::<RootOwner>().into_arc();
 	let branch_a = root.branch_with_type_tag::<AOwner>();
 	let branch_b = root.branch_with_type_tag::<BOwner>();
 
@@ -19,7 +19,7 @@ fn shared_at_root() {
 
 #[test]
 fn only_at_a() {
-	let root = Node::<V>::new_with_type_tag::<RootOwner>().into_arc();
+	let root = NodeHandle::<_, _, V>::new_with_type_tag::<RootOwner>().into_arc();
 	let branch_a = root.branch_with_type_tag::<AOwner>();
 	let branch_b = root.branch_with_type_tag::<BOwner>();
 
@@ -29,7 +29,7 @@ fn only_at_a() {
 
 #[test]
 fn not_shared() {
-	let root = Node::<V>::new_with_type_tag::<RootOwner>().into_arc();
+	let root = NodeHandle::<_, _, V>::new_with_type_tag::<RootOwner>().into_arc();
 	let branch_a = root.branch_with_type_tag::<AOwner>();
 	let branch_b = root.branch_with_type_tag::<AOwner>();
 
@@ -39,7 +39,7 @@ fn not_shared() {
 
 #[test]
 fn manual_provision() {
-	let root = Node::<V>::new_with_type_tag::<RootOwner>();
+	let root = NodeHandle::<_, _, V>::new_with_type_tag::<RootOwner>();
 	root.extract_by_type_key::<KManual>().unwrap_err();
 
 	root.provide(KManual::key(), V::default()).unwrap();
