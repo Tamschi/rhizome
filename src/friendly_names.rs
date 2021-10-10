@@ -1,10 +1,10 @@
-use static_init::dynamic;
-use std::{
+use core::{
 	any::{Any, TypeId},
 	borrow::Borrow,
-	collections::{hash_map::Entry, HashMap},
 	hash::Hash,
 };
+use static_init::dynamic;
+use std::collections::{hash_map::Entry, HashMap};
 
 #[dynamic]
 static mut FRIENDLY_NAMES: HashMap<TypeId, Box<dyn Send + Sync + Any>> = HashMap::new();

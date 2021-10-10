@@ -6,14 +6,13 @@
 #![doc(html_root_url = "https://docs.rs/rhizome/0.0.1")]
 #![warn(clippy::pedantic, missing_docs)]
 #![allow(clippy::semicolon_if_nothing_returned)]
-#![forbid(unsafe_code)]
 
 #[cfg(doctest)]
 pub mod readme {
 	doc_comment::doctest!("../README.md");
 }
 
-use std::convert::Infallible;
+use core::convert::Infallible;
 
 pub mod error;
 pub mod friendly_names;
