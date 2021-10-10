@@ -11,16 +11,6 @@ updates:
       - "type: upkeep"
       - "domain: Rust"
 
-  - package-ecosystem: "cargo"
-    directory: "/proc-macro-definitions"
-    schedule:
-      interval: "daily"
-    assignees:
-      - "Tamschi"
-    labels:
-      - "type: upkeep"
-      - "domain: Rust"
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
