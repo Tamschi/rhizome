@@ -257,7 +257,6 @@ impl<K: Ord, V: ?Sized> Node<TypeId, K, V> {
 }
 
 //TODO: Set up Error enum. (with variants for missing keys and other errors).
-//TRACKING: K must be clone until entry_insert/https://github.com/rust-lang/rust/issues/65225 lands.
 impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Extracts a value from this [`Node`] only according to the given `key`.
 	///
