@@ -4,6 +4,7 @@ use std::{
 	borrow::{Borrow, BorrowMut},
 	fmt::Debug,
 };
+use this_is_fine::prelude::*;
 
 #[derive(Debug, Dyncast)]
 #[dyncast(Self, dyn Debug)]

@@ -10,6 +10,7 @@ use std::{
 	sync::Arc,
 };
 use tap::Pipe;
+use this_is_fine::{prelude::*, Fine};
 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
@@ -92,7 +93,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn insert(&self, key: K, value: V) -> Result<Pin<&V>, (K, V)>
+	pub fn insert(&self, key: K, value: V) -> Fine<Pin<&V>, (K, V)>
 	where
 		V: Sized,
 	{
@@ -104,7 +105,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace<W>(&self, key: K, value: W) -> Result<Pin<&V>, (K, W)>
+	pub fn emplace<W>(&self, key: K, value: W) -> Fine<Pin<&V>, (K, W)>
 	where
 		W: BorrowMut<V>,
 	{
@@ -120,7 +121,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Result<Pin<&V>, (K, F)> {
+	) -> Fine<Pin<&V>, (K, F)> {
 		self.local_scope
 			.as_unpinned()
 			.emplace_with(key, value_factory)
@@ -140,7 +141,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Result<Result<Pin<&V>, (K, F)>, E> {
+	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
 		self.local_scope
 			.as_unpinned()
 			.try_emplace_with(key, value_factory)
@@ -159,7 +160,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Result<Pin<&V>, (K, F)> {
+	) -> Fine<Pin<&V>, (K, F)> {
 		self.local_scope.emplace_with(key, value_factory)
 	}
 
@@ -176,7 +177,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Result<Result<Pin<&V>, (K, F)>, E> {
+	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
 		self.local_scope.try_emplace_with(key, value_factory)
 	}
 
@@ -188,7 +189,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn insert_mut(&mut self, key: K, value: V) -> Result<Pin<&mut V>, (K, V)>
+	pub fn insert_mut(&mut self, key: K, value: V) -> Fine<Pin<&mut V>, (K, V)>
 	where
 		V: Sized,
 	{

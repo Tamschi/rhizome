@@ -225,13 +225,14 @@ checksum = "8d31d11c69a6b52a174b42bdc0c30e5e11670f90788b2c471c31c1d17d449443"
 
 [[package]]
 name = "pinus"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f009cef60b3cf9c1aa9fd320029c6e694027ac9ad3997cf7e5d3fcf28bd58af9"
+checksum = "f0c548c34332c783b4bbfcdf4425e8e5bebe278766b29bdae3f01d8817103a9c"
 dependencies = [
  "bumpalo",
  "parking_lot",
  "tap",
+ "this-is-fine",
 ]
 
 [[package]]
@@ -309,6 +310,7 @@ dependencies = [
  "static_assertions",
  "static_init",
  "tap",
+ "this-is-fine",
  "tracing",
  "version-sync",
  "wasm-bindgen-test",
@@ -407,6 +409,12 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "this-is-fine"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e922c27d74e8b47199e9a701eadf67135ae4f605a7eef123757ad500ce1c278"
 
 [[package]]
 name = "thiserror"
