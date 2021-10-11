@@ -4,17 +4,17 @@
 //! and not to any particular consumer-visible instance.
 
 use crate::UnwrapInfallible;
-use core::any::TypeId;
-use core::hash::Hasher;
 use core::{
+	any::TypeId,
 	borrow::{Borrow, BorrowMut},
+	hash::{Hash, Hasher},
+	mem,
 	mem::MaybeUninit,
+	ops::Deref,
 	pin::Pin,
+	ptr,
 };
 use pinus::{prelude::*, sync::PressedPineMap};
-use std::hash::Hash;
-use std::ops::Deref;
-use std::{mem, ptr};
 use tap::Pipe;
 use this_is_fine::Fine;
 
