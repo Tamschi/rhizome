@@ -15,10 +15,11 @@ use core::{
 	ptr,
 };
 use pinus::{prelude::*, sync::PressedPineMap};
+use std::marker::PhantomPinned;
 use tap::Pipe;
 use this_is_fine::Fine;
 
-use triomphe::{Arc, ArcBorrow, OffsetArc};
+use triomphe::{Arc, OffsetArc};
 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
@@ -32,7 +33,15 @@ pub struct NodeHandle<T, K: Ord, V: ?Sized> {
 	/// # Safety
 	///
 	/// This entire (containing) struct must match the layout of [`NodeBorrow::inner`] so that [`Borrow`] and [`Deref`] implementations are possible.
-	inner: OffsetArc<NodeInner<T, K, V>>,
+	inner: OffsetArc<Node<T, K, V>>,
+}
+
+impl<T, K: Ord, V: ?Sized> Deref for NodeHandle<T, K, V> {
+	type Target = Node<T, K, V>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.inner
+	}
 }
 
 impl<T, K: Ord, V: ?Sized> Clone for NodeHandle<T, K, V> {
@@ -57,75 +66,46 @@ impl<T, K: Ord, V: ?Sized> Hash for NodeHandle<T, K, V> {
 	}
 }
 
-/// Semantically this is a [`&NodeHandle`](`NodeHandle`).
-pub struct NodeBorrow<'a, T, K: Ord, V: ?Sized> {
-	/// # Safety
-	///
-	/// This field must match the layout of [`NodeHandle`] so that [`Borrow`] and [`Deref`] implementations are possible there.
-	inner: ArcBorrow<'a, NodeInner<T, K, V>>,
-}
-
-impl<T, K: Ord, V: ?Sized> Clone for NodeBorrow<'_, T, K, V> {
-	fn clone(&self) -> Self {
-		Self { inner: self.inner }
+impl<T, K: Ord, V: ?Sized> Borrow<Node<T, K, V>> for NodeHandle<T, K, V> {
+	fn borrow(&self) -> &Node<T, K, V> {
+		&self.inner
 	}
 }
 
-impl<T, K: Ord, V: ?Sized> Copy for NodeBorrow<'_, T, K, V> {}
-
-impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
-	unsafe fn as_local_ref_unchecked(&self) -> &'a NodeHandle<T, K, V> {
-		&*(&self.inner as *const ArcBorrow<'a, NodeInner<T, K, V>>).cast()
+impl<T, K: Ord, V: ?Sized> AsRef<Node<T, K, V>> for NodeHandle<T, K, V> {
+	fn as_ref(&self) -> &Node<T, K, V> {
+		&self.inner
 	}
 }
 
-impl<T, K: Ord, V: ?Sized> Deref for NodeBorrow<'_, T, K, V> {
-	type Target = NodeHandle<T, K, V>;
-
-	fn deref(&self) -> &Self::Target {
-		self.as_ref()
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> Borrow<NodeHandle<T, K, V>> for NodeBorrow<'_, T, K, V> {
-	fn borrow(&self) -> &NodeHandle<T, K, V> {
-		self
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> AsRef<NodeHandle<T, K, V>> for NodeBorrow<'_, T, K, V> {
-	fn as_ref(&self) -> &NodeHandle<T, K, V> {
-		self
-	}
-}
-
-impl<'a, T, K: Ord, V: ?Sized> PartialEq for NodeBorrow<'a, T, K, V> {
+impl<'a, T, K: Ord, V: ?Sized> PartialEq for Node<T, K, V> {
 	fn eq(&self, other: &Self) -> bool {
-		ptr::eq(&*self.inner, &*other.inner)
+		ptr::eq(self, other)
 	}
 }
 
-impl<'a, T, K: Ord, V: ?Sized> Eq for NodeBorrow<'a, T, K, V> {}
+impl<'a, T, K: Ord, V: ?Sized> Eq for Node<T, K, V> {}
 
-impl<'a, T, K: Ord, V: ?Sized> Hash for NodeBorrow<'a, T, K, V> {
+impl<'a, T, K: Ord, V: ?Sized> Hash for Node<T, K, V> {
 	fn hash<H: Hasher>(&self, state: &mut H) {
-		state.write_usize(&*self.inner as *const _ as usize)
+		state.write_usize(self as *const _ as usize)
 	}
 }
 
-/// An exclusive node borrow that enables much more efficient batch insertions.
-pub struct NodeGuard<'a, T, K: Ord, V: ?Sized> {
-	inner: &'a mut NodeInner<T, K, V>,
-}
-
-struct NodeInner<T, K: Ord, V: ?Sized> {
+/// An (externally) reference-counted tagged inverse map tree node.
+///
+/// Construct this indirectly via a [`NodeHandle`] constructor.
+#[pin_project::pin_project]
+pub struct Node<T, K: Ord, V: ?Sized> {
 	/// This crate walks along the graph a whole lot and normally doesn't do much refcounting,
 	/// so the offset version is likely a bit better here.
 	///
 	/// This is unbenched though. Someone might want to check.
-	parent: Option<OffsetArc<NodeInner<T, K, V>>>,
+	parent: Option<OffsetArc<Node<T, K, V>>>,
 	tag: T,
 	local_scope: Pin<PressedPineMap<K, V>>,
+	#[pin]
+	_pinned: PhantomPinned,
 }
 
 impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
@@ -133,10 +113,11 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	#[must_use]
 	pub fn new(tag: T) -> Self {
 		Self {
-			inner: Arc::into_raw_offset(Arc::new(NodeInner {
+			inner: Arc::into_raw_offset(Arc::new(Node {
 				parent: None,
 				tag,
 				local_scope: PressedPineMap::new().pin(),
+				_pinned: PhantomPinned,
 			})),
 		}
 	}
@@ -146,10 +127,11 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	#[must_use]
 	pub fn with_capacity(tag: T, capacity_bytes: usize) -> Self {
 		Self {
-			inner: Arc::into_raw_offset(Arc::new(NodeInner {
+			inner: Arc::into_raw_offset(Arc::new(Node {
 				parent: None,
 				tag,
 				local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
+				_pinned: PhantomPinned,
 			})),
 		}
 	}
@@ -162,15 +144,12 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	/// > It's theoretically also feasible to similarly lock a shared node,
 	/// > but this requires a matching lock/guard API in `pinus`.
 	#[must_use]
-	pub fn as_exclusive(&mut self) -> Option<NodeGuard<'_, T, K, V>> {
+	pub fn as_exclusive(&mut self) -> Option<Pin<&mut Node<T, K, V>>> {
 		// This appears to be the nicest way to do this as of `triomphe` 0.1.3…
 		self.inner.with_arc(|inner| inner.is_unique().then(|| ()))?;
 		unsafe {
-			mem::transmute_copy::<OffsetArc<NodeInner<T, K, V>>, &mut NodeInner<T, K, V>>(
-				&self.inner,
-			)
+			mem::transmute_copy::<OffsetArc<Node<T, K, V>>, Pin<&mut Node<T, K, V>>>(&self.inner)
 		}
-		.pipe(|inner| NodeGuard { inner })
 		.pipe(Some)
 	}
 
@@ -193,10 +172,11 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	#[must_use]
 	pub fn into_branch_for(self, tag: T) -> Self {
 		NodeHandle {
-			inner: Arc::into_raw_offset(Arc::new(NodeInner {
+			inner: Arc::into_raw_offset(Arc::new(Node {
 				parent: Some(self.inner),
 				tag,
 				local_scope: PressedPineMap::new().pin(),
+				_pinned: PhantomPinned,
 			})),
 		}
 	}
@@ -207,10 +187,11 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	#[must_use]
 	pub fn into_branch_for_with_capacity(self, tag: T, capacity_bytes: usize) -> Self {
 		NodeHandle {
-			inner: Arc::into_raw_offset(Arc::new(NodeInner {
+			inner: Arc::into_raw_offset(Arc::new(Node {
 				parent: Some(self.inner),
 				tag,
 				local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
+				_pinned: PhantomPinned,
 			})),
 		}
 	}
@@ -306,27 +287,16 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 		self.inner.local_scope.try_emplace_with(key, value_factory)
 	}
 
-	/// Borrows this node as [`NodeBorrow`] instead of as [`&NodeHandle`](`NodeHandle`),
-	/// which is one fewer indirection for most operations and as such much more efficient.
-	#[must_use]
-	pub fn borrow(&self) -> NodeBorrow<'_, T, K, V> {
-		NodeBorrow {
-			inner: self.inner.borrow_arc(),
-		}
-	}
-
 	/// Retrieves a reference to this node's parent node, if available.
 	#[must_use]
-	pub fn parent(&self) -> Option<NodeBorrow<T, K, V>> {
-		self.inner.parent.as_ref().map(|parent| NodeBorrow {
-			inner: parent.borrow_arc(),
-		})
+	pub fn parent(&self) -> Option<&Node<T, K, V>> {
+		self.inner.parent.as_deref()
 	}
 
 	/// Retrieves a reference to this node's root node, which may be itself.
 	#[must_use]
-	pub fn root(&self) -> NodeBorrow<'_, T, K, V> {
-		let mut this = self.borrow();
+	pub fn root(&self) -> &Node<T, K, V> {
+		let mut this = &**self;
 		while let Some(parent) = this.parent() {
 			this = parent;
 		}
@@ -337,14 +307,14 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	///
 	/// This may be the current node or any of its ancestors, but no siblings at any level.
 	#[must_use]
-	pub fn tagged<Q>(&self, tag: &Q) -> Option<NodeBorrow<'_, T, K, V>>
+	pub fn tagged<Q>(&self, tag: &Q) -> Option<&Node<T, K, V>>
 	where
 		T: Borrow<Q>,
 		Q: PartialEq + ?Sized,
 	{
-		let mut this = self.borrow();
+		let mut this = &**self;
 		loop {
-			if this.inner.tag.borrow() == tag {
+			if this.tag.borrow() == tag {
 				break Some(this);
 			}
 			this = this.parent()?;
@@ -352,20 +322,17 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	}
 }
 
-impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
+impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Stores `value` for `key` at the current node.
 	///
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn insert(&self, key: K, value: V) -> Fine<Pin<&'a V>, (K, V)>
+	pub fn insert(&self, key: K, value: V) -> Fine<Pin<&V>, (K, V)>
 	where
 		V: Sized,
 	{
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
-			.insert(key, value)
+		self.local_scope.insert(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -373,14 +340,11 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace<W>(&self, key: K, value: W) -> Fine<Pin<&'a V>, (K, W)>
+	pub fn emplace<W>(&self, key: K, value: W) -> Fine<Pin<&V>, (K, W)>
 	where
 		W: BorrowMut<V>,
 	{
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
-			.emplace(key, value)
+		self.local_scope.emplace(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -388,15 +352,12 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace_with<W, F: for<'b> FnOnce(&K, &'b mut MaybeUninit<W>) -> &'b mut V>(
+	pub fn emplace_with<W, F: for<'a> FnOnce(&K, &'a mut MaybeUninit<W>) -> &'a mut V>(
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Fine<Pin<&'a V>, (K, F)> {
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
-			.emplace_with_unpinned(key, value_factory)
+	) -> Fine<Pin<&V>, (K, F)> {
+		self.local_scope.emplace_with_unpinned(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -406,16 +367,14 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	/// Iff the local scope already contains a value for `key`.
 	pub fn try_emplace_with<
 		W,
-		F: for<'b> FnOnce(&K, &'b mut MaybeUninit<W>) -> Result<&'b mut V, E>,
+		F: for<'a> FnOnce(&K, &'a mut MaybeUninit<W>) -> Result<&'a mut V, E>,
 		E,
 	>(
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Result<Fine<Pin<&'a V>, (K, F)>, E> {
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
+	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
+		self.local_scope
 			.try_emplace_with_unpinned(key, value_factory)
 	}
 
@@ -426,16 +385,13 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	/// Iff the local scope already contains a value for `key`.
 	pub fn emplace_with_pinning<
 		W,
-		F: for<'b> FnOnce(&K, Pin<&'b mut MaybeUninit<W>>) -> Pin<&'b mut V>,
+		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Pin<&'a mut V>,
 	>(
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Fine<Pin<&'a V>, (K, F)> {
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
-			.emplace_with(key, value_factory)
+	) -> Fine<Pin<&V>, (K, F)> {
+		self.local_scope.emplace_with(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -445,35 +401,26 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	/// Iff the local scope already contains a value for `key`.
 	pub fn try_emplace_with_pinning<
 		W,
-		F: for<'b> FnOnce(&K, Pin<&'b mut MaybeUninit<W>>) -> Result<Pin<&'b mut V>, E>,
+		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Result<Pin<&'a mut V>, E>,
 		E,
 	>(
 		&self,
 		key: K,
 		value_factory: F,
-	) -> Result<Fine<Pin<&'a V>, (K, F)>, E> {
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
-			.try_emplace_with(key, value_factory)
+	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
+		self.local_scope.try_emplace_with(key, value_factory)
 	}
 
 	/// Retrieves a reference to this node's parent node, if available.
 	#[must_use]
-	pub fn parent(&self) -> Option<NodeBorrow<'a, T, K, V>> {
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.parent
-			.as_ref()
-			.map(|parent| NodeBorrow {
-				inner: parent.borrow_arc(),
-			})
+	pub fn parent(&self) -> Option<&Node<T, K, V>> {
+		self.parent.as_deref()
 	}
 
 	/// Retrieves a reference to this node's root node, which may be itself.
 	#[must_use]
-	pub fn root(&self) -> NodeBorrow<'a, T, K, V> {
-		let mut this = *self;
+	pub fn root(&self) -> &Node<T, K, V> {
+		let mut this = self;
 		while let Some(parent) = this.parent() {
 			this = parent;
 		}
@@ -484,14 +431,14 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	///
 	/// This may be the current node or any of its ancestors, but no siblings at any level.
 	#[must_use]
-	pub fn tagged<Q>(&self, tag: &Q) -> Option<NodeBorrow<'a, T, K, V>>
+	pub fn tagged<Q>(&self, tag: &Q) -> Option<&Node<T, K, V>>
 	where
 		T: Borrow<Q>,
 		Q: PartialEq + ?Sized,
 	{
-		let mut this = *self;
+		let mut this = self;
 		loop {
-			if this.inner.tag.borrow() == tag {
+			if this.tag.borrow() == tag {
 				break Some(this);
 			}
 			this = this.parent()?;
@@ -539,7 +486,7 @@ impl<K: Ord, V: ?Sized> NodeHandle<TypeId, K, V> {
 	///
 	/// This may be the current node or any of its ancestors, but no siblings at any level.
 	#[must_use]
-	pub fn type_tagged<Tag: 'static>(&self) -> Option<NodeBorrow<'_, TypeId, K, V>> {
+	pub fn type_tagged<Tag: 'static>(&self) -> Option<&Node<TypeId, K, V>> {
 		self.tagged(&TypeId::of::<Tag>())
 	}
 }
@@ -566,7 +513,7 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	///
 	/// Iff a poisoned node is reached.
 	#[must_use]
-	pub fn get<Q>(&self, key: &Q) -> Option<(NodeBorrow<'_, T, K, V>, Pin<&V>)>
+	pub fn get<Q>(&self, key: &Q) -> Option<(&Node<T, K, V>, Pin<&V>)>
 	where
 		K: Borrow<Q>,
 		Q: Ord + ?Sized,
@@ -585,10 +532,10 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	///
 	/// Not directly, but if a poisoned node is reached, then `selector` is likely to panic.
 	#[must_use]
-	pub fn find<S: for<'a> Fn(NodeBorrow<'a, T, K, V>) -> Option<Pin<&'a V>>>(
+	pub fn find<S: for<'a> Fn(&'a Node<T, K, V>) -> Option<Pin<&'a V>>>(
 		&self,
 		local_selector: S,
-	) -> Option<(NodeBorrow<'_, T, K, V>, Pin<&V>)> {
+	) -> Option<(&Node<T, K, V>, Pin<&V>)> {
 		self.try_find(|node| Ok(local_selector(node)))
 			.unwrap_infallible()
 	}
@@ -608,10 +555,10 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	/// # Panics
 	///
 	/// Not directly, but if a poisoned node is reached, then `selector` is likely to panic.
-	pub fn try_find<S: for<'a> Fn(NodeBorrow<'a, T, K, V>) -> Result<Option<Pin<&'a V>>, E>, E>(
+	pub fn try_find<S: for<'a> Fn(&'a Node<T, K, V>) -> Result<Option<Pin<&'a V>>, E>, E>(
 		&self,
 		local_selector: S,
-	) -> Result<Option<(NodeBorrow<T, K, V>, Pin<&V>)>, E> {
+	) -> Result<Option<(&Node<T, K, V>, Pin<&V>)>, E> {
 		let mut this = self.borrow();
 		loop {
 			if let Some(found) = local_selector(this)? {
@@ -629,22 +576,19 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 }
 
 //TODO: Set up Error enum. (with variants for missing keys and other errors).
-impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
+impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Extracts a value from this node only according to the given `key`.
 	///
 	/// # Panics
 	///
 	/// Iff this node is poisoned.
 	#[must_use]
-	pub fn get_local<Q>(&self, key: &Q) -> Option<Pin<&'a V>>
+	pub fn get_local<Q>(&self, key: &Q) -> Option<Pin<&V>>
 	where
 		K: Borrow<Q>,
 		Q: Ord + ?Sized,
 	{
-		unsafe { self.as_local_ref_unchecked() }
-			.inner
-			.local_scope
-			.get(key)
+		self.local_scope.get(key)
 	}
 
 	/// Extracts a value from the node tree according to the given `key`.
@@ -653,7 +597,7 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	///
 	/// Iff a poisoned node is reached.
 	#[must_use]
-	pub fn get<Q>(&self, key: &Q) -> Option<(NodeBorrow<'a, T, K, V>, Pin<&'a V>)>
+	pub fn get<Q>(&self, key: &Q) -> Option<(&Node<T, K, V>, Pin<&V>)>
 	where
 		K: Borrow<Q>,
 		Q: Ord + ?Sized,
@@ -672,12 +616,11 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	///
 	/// Not directly, but if a poisoned node is reached, then `selector` is likely to panic.
 	#[must_use]
-	pub fn find<S: for<'b> Fn(NodeBorrow<'b, T, K, V>) -> Option<Pin<&'b V>>>(
+	pub fn find<S: for<'a> Fn(&'a Node<T, K, V>) -> Option<Pin<&'a V>>>(
 		&self,
 		local_selector: S,
-	) -> Option<(NodeBorrow<'a, T, K, V>, Pin<&'a V>)> {
-		unsafe { self.as_local_ref_unchecked() }
-			.try_find(|node| Ok(local_selector(node)))
+	) -> Option<(&Node<T, K, V>, Pin<&V>)> {
+		self.try_find(|node| Ok(local_selector(node)))
 			.unwrap_infallible()
 	}
 
@@ -696,11 +639,11 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	/// # Panics
 	///
 	/// Not directly, but if a poisoned node is reached, then `selector` is likely to panic.
-	pub fn try_find<S: for<'b> Fn(NodeBorrow<'b, T, K, V>) -> Result<Option<Pin<&'b V>>, E>, E>(
+	pub fn try_find<S: for<'a> Fn(&'a Node<T, K, V>) -> Result<Option<Pin<&'a V>>, E>, E>(
 		&self,
 		local_selector: S,
-	) -> Result<Option<(NodeBorrow<T, K, V>, Pin<&'a V>)>, E> {
-		let mut this = *self;
+	) -> Result<Option<(&Node<T, K, V>, Pin<&V>)>, E> {
+		let mut this = self;
 		loop {
 			if let Some(found) = local_selector(this)? {
 				break Some((this, found));
@@ -716,18 +659,18 @@ impl<'a, T, K: Ord, V: ?Sized> NodeBorrow<'a, T, K, V> {
 	//TODO: `search` and `try_search`, which should iterate using repeat `find` and/or `try_find` calls.
 }
 
-impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
+impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Stores `value` for `key` at the current node.
 	///
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
 	#[allow(clippy::missing_panics_doc)] //TODO: Validate the panics are indeed unreachable, then clean up potential panic sites.
-	pub fn insert(&mut self, key: K, value: V) -> Fine<Pin<&mut V>, (K, V)>
+	pub fn insert_mut(self: Pin<&mut Self>, key: K, value: V) -> Fine<Pin<&mut V>, (K, V)>
 	where
 		V: Sized,
 	{
-		self.inner.local_scope.insert_mut(key, value)
+		self.project().local_scope.insert_mut(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -735,11 +678,11 @@ impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace<W>(&mut self, key: K, value: W) -> Fine<Pin<&mut V>, (K, W)>
+	pub fn emplace_mut<W>(self: Pin<&mut Self>, key: K, value: W) -> Fine<Pin<&mut V>, (K, W)>
 	where
 		W: BorrowMut<V>,
 	{
-		self.inner.local_scope.emplace_mut(key, value)
+		self.project().local_scope.emplace_mut(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -747,12 +690,12 @@ impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace_with<W, F: for<'b> FnOnce(&K, &'b mut MaybeUninit<W>) -> &'b mut V>(
-		&mut self,
+	pub fn emplace_with_mut<W, F: for<'a> FnOnce(&K, &'a mut MaybeUninit<W>) -> &'a mut V>(
+		self: Pin<&mut Self>,
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&mut V>, (K, F)> {
-		self.inner
+		self.project()
 			.local_scope
 			.emplace_with_mut_unpinned(key, value_factory)
 	}
@@ -762,16 +705,16 @@ impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn try_emplace_with<
+	pub fn try_emplace_with_mut<
 		W,
-		F: for<'b> FnOnce(&K, &'b mut MaybeUninit<W>) -> Result<&'b mut V, E>,
+		F: for<'a> FnOnce(&K, &'a mut MaybeUninit<W>) -> Result<&'a mut V, E>,
 		E,
 	>(
-		&mut self,
+		self: Pin<&mut Self>,
 		key: K,
 		value_factory: F,
 	) -> Result<Fine<Pin<&mut V>, (K, F)>, E> {
-		self.inner
+		self.project()
 			.local_scope
 			.try_emplace_with_mut_unpinned(key, value_factory)
 	}
@@ -781,15 +724,17 @@ impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn emplace_with_pinning<
+	pub fn emplace_with_pinning_mut<
 		W,
-		F: for<'b> FnOnce(&K, Pin<&'b mut MaybeUninit<W>>) -> Pin<&'b mut V>,
+		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Pin<&'a mut V>,
 	>(
-		&mut self,
+		self: Pin<&mut Self>,
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&mut V>, (K, F)> {
-		self.inner.local_scope.emplace_with_mut(key, value_factory)
+		self.project()
+			.local_scope
+			.emplace_with_mut(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -797,31 +742,17 @@ impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
 	/// # Errors
 	///
 	/// Iff the local scope already contains a value for `key`.
-	pub fn try_emplace_with_pinning<
+	pub fn try_emplace_with_pinning_mut<
 		W,
-		F: for<'b> FnOnce(&K, Pin<&'b mut MaybeUninit<W>>) -> Result<Pin<&'b mut V>, E>,
+		F: for<'a> FnOnce(&K, Pin<&'a mut MaybeUninit<W>>) -> Result<Pin<&'a mut V>, E>,
 		E,
 	>(
-		&mut self,
+		self: Pin<&mut Self>,
 		key: K,
 		value_factory: F,
 	) -> Result<Fine<Pin<&mut V>, (K, F)>, E> {
-		self.inner
+		self.project()
 			.local_scope
 			.try_emplace_with_mut(key, value_factory)
-	}
-}
-
-impl<'a, T, K: Ord, V: ?Sized> NodeGuard<'a, T, K, V> {
-	/// Retrieves a reference to this node's parent node, if available.
-	#[must_use]
-	pub fn parent(&self) -> Option<NodeBorrow<'a, T, K, V>> {
-		unsafe { &*(self as *const NodeGuard<'_, T, K, V>).cast::<NodeGuard<'a, T, K, V>>() }
-			.inner
-			.parent
-			.as_ref()
-			.map(|parent| NodeBorrow {
-				inner: parent.borrow_arc(),
-			})
 	}
 }

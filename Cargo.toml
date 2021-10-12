@@ -35,6 +35,7 @@ is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
 maintenance = { status = "experimental" } # This may differ between branches.
 
 [dependencies]
+pin-project = "1.0.8"
 pinus = "0.0.4"
 static_init = { path = "../static_init", version = "1.0.1" }
 tap = "1.0.1"
