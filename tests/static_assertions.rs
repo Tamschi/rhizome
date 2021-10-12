@@ -1,7 +1,2 @@
-use std::panic::RefUnwindSafe;
-
-use rhizome::sync::NodeHandle;
-use static_assertions::assert_impl_all;
-
-//FIXME
+//FIXME: This should be possible, but will need support from `pinus`.
 // assert_impl_all!(Node: RefUnwindSafe);
