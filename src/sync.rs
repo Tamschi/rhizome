@@ -161,6 +161,7 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 	/// >
 	/// > It's theoretically also feasible to similarly lock a shared node,
 	/// > but this requires a matching lock/guard API in `pinus`.
+	#[must_use]
 	pub fn as_exclusive(&mut self) -> Option<NodeGuard<'_, T, K, V>> {
 		// This appears to be the nicest way to do this as of `triomphe` 0.1.3…
 		self.inner.with_arc(|inner| inner.is_unique().then(|| ()))?;
@@ -173,15 +174,23 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 		.pipe(Some)
 	}
 
+	/// [`Clone`]s this handle to use this node as parent of a new node tagged `tag`.
+	#[must_use]
 	pub fn branch_for(&self, tag: T) -> Self {
 		self.clone().into_branch_for(tag)
 	}
 
+	/// [`Clone`]s this handle to use this node as parent of a new node tagged `tag`,
+	/// pre-allocating at least `capacity_bytes` of maximally-aligned contiguous memory to store values.
+	#[must_use]
 	pub fn branch_for_with_capacity(&self, tag: T, capacity_bytes: usize) -> Self {
 		self.clone()
 			.into_branch_for_with_capacity(tag, capacity_bytes)
 	}
 
+	/// Uses this node as parent of a new node tagged `tag`,
+	/// without cloning the handle.
+	#[must_use]
 	pub fn into_branch_for(self, tag: T) -> Self {
 		NodeHandle {
 			inner: Arc::into_raw_offset(Arc::new(NodeInner {
@@ -192,6 +201,10 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 		}
 	}
 
+	/// Uses this node as parent of a new node tagged `tag`,
+	/// without cloning the handle,
+	/// pre-allocating at least `capacity_bytes` of maximally-aligned contiguous memory to store values.
+	#[must_use]
 	pub fn into_branch_for_with_capacity(self, tag: T, capacity_bytes: usize) -> Self {
 		NodeHandle {
 			inner: Arc::into_raw_offset(Arc::new(NodeInner {
@@ -293,6 +306,8 @@ impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
 		self.inner.local_scope.try_emplace_with(key, value_factory)
 	}
 
+	/// Borrows this node as [`NodeBorrow`] instead of as [`&NodeHandle`](`NodeHandle`),
+	/// which is one fewer indirection for most operations and as such much more efficient.
 	#[must_use]
 	pub fn borrow(&self) -> NodeBorrow<'_, T, K, V> {
 		NodeBorrow {
@@ -798,10 +813,6 @@ impl<T, K: Ord, V: ?Sized> NodeGuard<'_, T, K, V> {
 }
 
 impl<'a, T, K: Ord, V: ?Sized> NodeGuard<'a, T, K, V> {
-	unsafe fn as_local_ref_unchecked(&self) -> &'a NodeGuard<T, K, V> {
-		&*(self as *const Self)
-	}
-
 	/// Retrieves a reference to this node's parent node, if available.
 	#[must_use]
 	pub fn parent(&self) -> Option<NodeBorrow<'a, T, K, V>> {

@@ -14,8 +14,6 @@ pub mod readme {
 
 use core::convert::Infallible;
 
-pub mod error;
-pub mod friendly_names;
 pub mod sync;
 
 #[cfg(feature = "macros")]
