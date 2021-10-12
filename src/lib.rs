@@ -8,7 +8,7 @@
 //! In order to provide a *Rusty and concise API*, this library does out of bounds reads on shared references.
 //!
 //! Not nice, currently works, might not be legal in the future, so this is stuck on 0.0.x for now.
-//! 
+//!
 //! > This can be fixed using intrusive reference-counting, though.
 
 #![doc(html_root_url = "https://docs.rs/rhizome/0.0.1")]
