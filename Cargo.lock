@@ -3,10 +3,10 @@
 version = 3
 
 [[package]]
-name = "autocfg"
-version = "1.0.1"
+name = "abort"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
+checksum = "addde1f7d1104254aa8cd4293f8478b1783462b7cb33815c19cb1bbbb51277ba"
 
 [[package]]
 name = "bitflags"
@@ -187,15 +187,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
-name = "memoffset"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59accc507f1338036a0477ef61afdae33cde60840f4dfe481319ce3ad116ddf9"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -340,8 +331,8 @@ dependencies = [
  "static_assertions",
  "tap",
  "this-is-fine",
+ "tiptoe",
  "tracing",
- "triomphe",
  "version-sync",
  "wasm-bindgen-test",
 ]
@@ -458,6 +449,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
+name = "tiptoe"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59cd5ff5182f5f04d4fc8c0cc83def9bcc7c4b86342f871a98fad144898cbd07"
+dependencies = [
+ "abort",
+ "tap",
+]
+
+[[package]]
 name = "toml"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -496,15 +497,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f4ed65637b8390770814083d20756f87bfa2c21bf2f110babdc5438351746e4"
 dependencies = [
  "lazy_static",
-]
-
-[[package]]
-name = "triomphe"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46bddb80ec09585c58022a2c55e6e7c11e713d9bb26895f1b56cd945c4040c54"
-dependencies = [
- "memoffset",
 ]
 
 [[package]]

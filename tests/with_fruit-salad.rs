@@ -1,5 +1,5 @@
 use fruit_salad::Dyncast;
-use rhizome::sync::NodeHandle;
+use rhizome::sync::Node;
 use std::{
 	borrow::{Borrow, BorrowMut},
 	fmt::Debug,
@@ -22,12 +22,12 @@ impl<'a> BorrowMut<dyn 'a + Dyncast> for A {
 
 #[test]
 fn test() {
-	let root = NodeHandle::<_, _, dyn Dyncast>::new(1);
+	let root = Node::<_, _, dyn Dyncast>::new(1);
 
-	let second = root.into_branch_for(2);
+	let second = Node::handle_into_branch_for(root, 2);
 
 	let third_a = second.branch_for(3);
-	let third_b = second.into_branch_for(3);
+	let third_b = Node::handle_into_branch_for(second, 3);
 
 	third_a.root().emplace("at root", A("at root")).unwrap();
 	assert!(matches!(

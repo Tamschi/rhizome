@@ -7,9 +7,7 @@ use crate::UnwrapInfallible;
 use core::{
 	borrow::{Borrow, BorrowMut},
 	hash::{Hash, Hasher},
-	mem,
 	mem::MaybeUninit,
-	ops::Deref,
 	pin::Pin,
 	ptr,
 };
@@ -18,71 +16,23 @@ use std::marker::PhantomPinned;
 use tap::Pipe;
 use this_is_fine::Fine;
 
-use triomphe::{Arc, ArcBorrow, OffsetArc};
+use tiptoe::{Arc, IntrusivelyCountable, ManagedClone, RefCounter, TipToe};
 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
 
-/// A thread-safe tagged inverse map tree node *handle*.
-///
-/// Note that equality is implemented as node identity.
-/// A [cloned](`Clone::clone`) handle will be equal, but a [cloned](`Clone::clone`) node's handle will no be.
-#[repr(transparent)]
-pub struct NodeHandle<T, K: Ord, V: ?Sized> {
-	inner: Arc<Node<T, K, V>>,
-}
+/// Shorthand for `Pin<Arc<Node<T, K, V>>>`.
+pub type NodeHandle<T, K, V, C = TipToe> = Pin<Arc<Node<T, K, V, C>>>;
 
-impl<T, K: Ord, V: ?Sized> Deref for NodeHandle<T, K, V> {
-	type Target = Node<T, K, V>;
-
-	fn deref(&self) -> &Self::Target {
-		&self.inner
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> Clone for NodeHandle<T, K, V> {
-	fn clone(&self) -> Self {
-		Self {
-			inner: self.inner.clone(),
-		}
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> PartialEq for NodeHandle<T, K, V> {
-	fn eq(&self, other: &Self) -> bool {
-		ptr::eq(&*self.inner, &*other.inner)
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> Eq for NodeHandle<T, K, V> {}
-
-impl<T, K: Ord, V: ?Sized> Hash for NodeHandle<T, K, V> {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		state.write_usize(&*self.inner as *const _ as usize)
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> Borrow<Node<T, K, V>> for NodeHandle<T, K, V> {
-	fn borrow(&self) -> &Node<T, K, V> {
-		&self.inner
-	}
-}
-
-impl<T, K: Ord, V: ?Sized> AsRef<Node<T, K, V>> for NodeHandle<T, K, V> {
-	fn as_ref(&self) -> &Node<T, K, V> {
-		&self.inner
-	}
-}
-
-impl<'a, T, K: Ord, V: ?Sized> PartialEq for Node<T, K, V> {
+impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> PartialEq for Node<T, K, V, C> {
 	fn eq(&self, other: &Self) -> bool {
 		ptr::eq(self, other)
 	}
 }
 
-impl<'a, T, K: Ord, V: ?Sized> Eq for Node<T, K, V> {}
+impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> Eq for Node<T, K, V, C> {}
 
-impl<'a, T, K: Ord, V: ?Sized> Hash for Node<T, K, V> {
+impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> Hash for Node<T, K, V, C> {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		state.write_usize(self as *const _ as usize)
 	}
@@ -92,86 +42,125 @@ impl<'a, T, K: Ord, V: ?Sized> Hash for Node<T, K, V> {
 ///
 /// Construct this indirectly via a [`NodeHandle`] constructor.
 #[pin_project::pin_project]
-pub struct Node<T, K: Ord, V: ?Sized> {
+pub struct Node<T, K: Ord, V: ?Sized, C: RefCounter = TipToe> {
 	/// This crate walks along the graph a whole lot and normally doesn't do much refcounting,
 	/// so the offset version is likely a bit better here.
 	///
 	/// This is unbenched though. Someone might want to check.
-	parent: Option<OffsetArc<Node<T, K, V>>>,
+	parent: Option<NodeHandle<T, K, V, C>>,
 	tag: T,
 	local_scope: Pin<PressedPineMap<K, V>>,
 	#[pin]
-	_pinned: PhantomPinned,
+	ref_counter: C,
+	// FIXME: Remove the extra `PhantomPinned` once `RefCounter` guarantees `!Unpin`.
+	#[pin]
+	pinned: PhantomPinned,
 }
 
-impl<T, K: Ord, V: ?Sized> NodeHandle<T, K, V> {
+impl<T, K: Ord, V: ?Sized, C: RefCounter> ManagedClone for Node<T, K, V, C>
+where
+	T: ManagedClone,
+	Pin<PressedPineMap<K, V>>: ManagedClone,
+	V: Clone,
+	C: ManagedClone,
+{
+	unsafe fn managed_clone(&self) -> Self {
+		// SAFETY: Everything is wrapped as before.
+		Self {
+			parent: Option::managed_clone(&self.parent),
+			tag: self.tag.managed_clone(),
+			local_scope: self.local_scope.managed_clone(),
+			ref_counter: self.ref_counter.managed_clone(),
+			pinned: self.pinned.managed_clone(),
+		}
+	}
+}
+
+unsafe impl<T, K: Ord, V: ?Sized, C: RefCounter> IntrusivelyCountable for Node<T, K, V, C> {
+	type RefCounter = C;
+
+	fn ref_counter(&self) -> &Self::RefCounter {
+		&self.ref_counter
+	}
+}
+
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	/// Creates a new root-node with tag `tag`.
 	#[must_use]
-	pub fn new(tag: T) -> Self {
+	pub fn new(tag: T) -> NodeHandle<T, K, V, C>
+	where
+		C: Default,
+	{
 		Self {
-			inner: Arc::new(Node {
-				parent: None,
-				tag,
-				local_scope: PressedPineMap::new().pin(),
-				_pinned: PhantomPinned,
-			}),
+			parent: None,
+			tag,
+			local_scope: PressedPineMap::new().pin(),
+			ref_counter: C::default(),
+			pinned: PhantomPinned,
 		}
+		.pipe(Arc::pin)
 	}
 
 	/// Creates a new root-node with tag `tag` that will store values (almost) contiguously
 	/// until `capacity` (in bytes that are the size of a maximally aligned buffer!) are exceeded.
 	#[must_use]
-	pub fn with_capacity(tag: T, capacity_bytes: usize) -> Self {
+	pub fn with_capacity(tag: T, capacity_bytes: usize) -> NodeHandle<T, K, V, C>
+	where
+		C: Default,
+	{
 		Self {
-			inner: Arc::new(Node {
-				parent: None,
-				tag,
-				local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
-				_pinned: PhantomPinned,
-			}),
+			parent: None,
+			tag,
+			local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
+			ref_counter: C::default(),
+			pinned: PhantomPinned,
 		}
-	}
-
-	/// As long as only a single handle exists,
-	/// it can be borrowed exclusively for more efficient batch modifications.
-	///
-	/// > Internally, this skips synchronisation steps/locking entirely.
-	/// >
-	/// > It's theoretically also feasible to similarly lock a shared node,
-	/// > but this requires a matching lock/guard API in `pinus`.
-	#[must_use]
-	pub fn as_exclusive(&mut self) -> Option<Pin<&mut Node<T, K, V>>> {
-		// This appears to be the nicest way to do this as of `triomphe` 0.1.3…
-		Arc::get_mut(&mut self.inner).map(|exclusive| unsafe { Pin::new_unchecked(exclusive) })
+		.pipe(Arc::pin)
 	}
 
 	/// Uses this node as parent of a new node tagged `tag`,
 	/// without cloning the handle.
 	#[must_use]
-	pub fn into_branch_for(self, tag: T) -> Self {
-		NodeHandle {
-			inner: Arc::new(Node {
-				parent: Some(Arc::into_raw_offset(self.inner)),
-				tag,
-				local_scope: PressedPineMap::new().pin(),
-				_pinned: PhantomPinned,
-			}),
+	pub fn handle_into_branch_for(parent: NodeHandle<T, K, V, C>, tag: T) -> NodeHandle<T, K, V, C>
+	where
+		C: Default,
+	{
+		Self {
+			parent: Some(parent),
+			tag,
+			local_scope: PressedPineMap::new().pin(),
+			ref_counter: C::default(),
+			pinned: PhantomPinned,
 		}
+		.pipe(Arc::pin)
 	}
 
 	/// Uses this node as parent of a new node tagged `tag`,
 	/// without cloning the handle,
 	/// pre-allocating at least `capacity_bytes` of maximally-aligned contiguous memory to store values.
 	#[must_use]
-	pub fn into_branch_for_with_capacity(self, tag: T, capacity_bytes: usize) -> Self {
-		NodeHandle {
-			inner: Arc::new(Node {
-				parent: Some(Arc::into_raw_offset(self.inner)),
-				tag,
-				local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
-				_pinned: PhantomPinned,
-			}),
+	pub fn handle_into_branch_for_with_capacity(
+		parent: NodeHandle<T, K, V, C>,
+		tag: T,
+		capacity_bytes: usize,
+	) -> NodeHandle<T, K, V, C>
+	where
+		C: Default,
+	{
+		Self {
+			parent: Some(parent),
+			tag,
+			local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
+			ref_counter: C::default(),
+			pinned: PhantomPinned,
 		}
+		.pipe(Arc::pin)
+	}
+
+	/// Creates an additional handle for this [`Node`], incrementing the internal reference count.
+	#[must_use]
+	pub fn clone_handle(&self) -> NodeHandle<T, K, V, C> {
+		Pin::clone(unsafe { Arc::borrow_pin_from_inner_ref(&self) })
 	}
 }
 
@@ -180,22 +169,14 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// [`Clone`]s this handle to use this node as parent of a new node tagged `tag`.
 	#[must_use]
 	pub fn branch_for(&self, tag: T) -> NodeHandle<T, K, V> {
-		// FIXME: UB but currently works. An intrusive `Arc` could avoid that issue.
-		unsafe { mem::transmute::<&Self, ArcBorrow<'_, Self>>(self) }
-			.clone_arc()
-			.pipe(|inner| NodeHandle { inner })
-			.into_branch_for(tag)
+		Self::handle_into_branch_for(self.clone_handle(), tag)
 	}
 
 	/// [`Clone`]s this handle to use this node as parent of a new node tagged `tag`,
 	/// pre-allocating at least `capacity_bytes` of maximally-aligned contiguous memory to store values.
 	#[must_use]
 	pub fn branch_for_with_capacity(&self, tag: T, capacity_bytes: usize) -> NodeHandle<T, K, V> {
-		// FIXME: UB but currently works. An intrusive `Arc` could avoid that issue.
-		unsafe { mem::transmute::<&Self, ArcBorrow<'_, Self>>(self) }
-			.clone_arc()
-			.pipe(|inner| NodeHandle { inner })
-			.into_branch_for_with_capacity(tag, capacity_bytes)
+		Self::handle_into_branch_for_with_capacity(self.clone_handle(), tag, capacity_bytes)
 	}
 }
 
