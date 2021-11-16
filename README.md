@@ -14,6 +14,7 @@
 [![good first issues](https://img.shields.io/github/issues-raw/Tamschi/rhizome/good%20first%20issue?label=good+first+issues)](https://github.com/Tamschi/rhizome/contribute)
 
 [![crev reviews](https://web.crev.dev/rust-reviews/badge/crev_count/rhizome.svg)](https://web.crev.dev/rust-reviews/crate/rhizome/)
+[![Zulip Chat](https://img.shields.io/endpoint?label=chat&url=https%3A%2F%2Fiteration-square-automation.schichler.dev%2F.netlify%2Ffunctions%2Fstream_subscribers_shield%3Fstream%3Dproject%252Frhizome)](https://iteration-square.schichler.dev/#narrow/stream/project.2Frhizome)
 
 A convenient hierarchical dependency-extraction container.
 

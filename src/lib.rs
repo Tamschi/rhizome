@@ -1,5 +1,7 @@
 //! Convenient hierarchical dependency-extraction containers, implemented as reverse trees.
 //!
+//! [![Zulip Chat](https://img.shields.io/endpoint?label=chat&url=https%3A%2F%2Fiteration-square-automation.schichler.dev%2F.netlify%2Ffunctions%2Fstream_subscribers_shield%3Fstream%3Dproject%252Frhizome)](https://iteration-square.schichler.dev/#narrow/stream/project.2Frhizome)
+//!
 //! This is a data structure that can be used to implement an inversion of control pattern and a Rust-compatible equivalent of dependency-injection,
 //! to enable lazy resource provision, resource shadowing and testing/configuration use cases.
 //!
