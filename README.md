@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/rhizome)](https://crates.io/crates/rhizome)
 [![Docs.rs](https://docs.rs/rhizome/badge.svg)](https://docs.rs/rhizome)
 
-![Rust 1.51](https://img.shields.io/static/v1?logo=Rust&label=&message=1.51&color=grey)
+![Rust 1.55](https://img.shields.io/static/v1?logo=Rust&label=&message=1.55&color=grey)
 [![CI](https://github.com/Tamschi/rhizome/workflows/CI/badge.svg?branch=develop)](https://github.com/Tamschi/rhizome/actions?query=workflow%3ACI+branch%3Adevelop)
 ![Crates.io - License](https://img.shields.io/crates/l/rhizome/0.0.1)
 
