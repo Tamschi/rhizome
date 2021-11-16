@@ -45,7 +45,7 @@ triomphe = { version = "0.1.3", default-features = false }
 [dev-dependencies]
 cargo-husky = "1.5.0"
 doc-comment = "0.3.3"
-fruit-salad = { version = "0.0.1", features = ["macros"] }
+fruit-salad = { version = "0.0.2", features = ["macros"] }
 git_info = "0.1.2"
 static_assertions = "1.1.0"
 version-sync = "0.9.1"

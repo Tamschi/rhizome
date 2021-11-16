@@ -83,9 +83,9 @@ dependencies = [
 
 [[package]]
 name = "fruit-salad"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00ba6d155dcbcf7d2c14e662dfd530faf6065e859f91603ffbb064d59d573013"
+checksum = "36af42662b7c11b40aa6bc34d77cd3e29fb859dba62c4161b7e46888513c3616"
 dependencies = [
  "fruit-salad_proc-macro-definitions",
  "static_assertions",
