@@ -21,7 +21,7 @@ use tiptoe::{Arc, ExclusivePin, IntrusivelyCountable, ManagedClone, RefCounter, 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
 
-/// Shorthand for `Pin<Arc<Node<T, K, V, C>>>`.
+/// Shorthand for `Pin<Arc<Node<T, K, V, C = TipToe>>>`.
 pub type NodeHandle<T, K, V, C = TipToe> = Pin<Arc<Node<T, K, V, C>>>;
 
 impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> PartialEq for Node<T, K, V, C> {
@@ -38,7 +38,7 @@ impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> Hash for Node<T, K, V, C> {
 	}
 }
 
-/// An (externally) reference-counted tagged inverse map tree node.
+/// A reference-counted tagged inverse map tree node.
 ///
 /// Construct this indirectly via a [`NodeHandle`] constructor.
 #[pin_project::pin_project]
