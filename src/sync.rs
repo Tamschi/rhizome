@@ -16,12 +16,12 @@ use std::marker::PhantomPinned;
 use tap::Pipe;
 use this_is_fine::Fine;
 
-use tiptoe::{Arc, IntrusivelyCountable, ManagedClone, RefCounter, TipToe};
+use tiptoe::{Arc, ExclusivePin, IntrusivelyCountable, ManagedClone, RefCounter, TipToe};
 
 #[cfg(feature = "macros")]
 pub use crate::TypeKey;
 
-/// Shorthand for `Pin<Arc<Node<T, K, V>>>`.
+/// Shorthand for `Pin<Arc<Node<T, K, V, C>>>`.
 pub type NodeHandle<T, K, V, C = TipToe> = Pin<Arc<Node<T, K, V, C>>>;
 
 impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> PartialEq for Node<T, K, V, C> {
@@ -165,23 +165,29 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 }
 
 /// # Branching
-impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	/// [`Clone`]s this handle to use this node as parent of a new node tagged `tag`.
 	#[must_use]
-	pub fn branch_for(&self, tag: T) -> NodeHandle<T, K, V> {
+	pub fn branch_for(&self, tag: T) -> NodeHandle<T, K, V, C>
+	where
+		C: Default,
+	{
 		Self::handle_into_branch_for(self.clone_handle(), tag)
 	}
 
 	/// [`Clone`]s this handle to use this node as parent of a new node tagged `tag`,
 	/// pre-allocating at least `capacity_bytes` of maximally-aligned contiguous memory to store values.
 	#[must_use]
-	pub fn branch_for_with_capacity(&self, tag: T, capacity_bytes: usize) -> NodeHandle<T, K, V> {
+	pub fn branch_for_with_capacity(&self, tag: T, capacity_bytes: usize) -> NodeHandle<T, K, V, C>
+	where
+		C: Default,
+	{
 		Self::handle_into_branch_for_with_capacity(self.clone_handle(), tag, capacity_bytes)
 	}
 }
 
 /// # Insertions
-impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	/// Stores `value` for `key` at the current node.
 	///
 	/// # Errors
@@ -272,13 +278,13 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 
 	/// Retrieves a reference to this node's parent node, if available.
 	#[must_use]
-	pub fn parent(&self) -> Option<&Node<T, K, V>> {
+	pub fn parent(&self) -> Option<&Node<T, K, V, C>> {
 		self.parent.as_deref()
 	}
 
 	/// Retrieves a reference to this node's root node, which may be itself.
 	#[must_use]
-	pub fn root(&self) -> &Node<T, K, V> {
+	pub fn root(&self) -> &Node<T, K, V, C> {
 		let mut this = self;
 		while let Some(parent) = this.parent() {
 			this = parent;
@@ -290,7 +296,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	///
 	/// This may be the current node or any of its ancestors, but no siblings at any level.
 	#[must_use]
-	pub fn tagged<Q>(&self, tag: &Q) -> Option<&Node<T, K, V>>
+	pub fn tagged<Q>(&self, tag: &Q) -> Option<&Node<T, K, V, C>>
 	where
 		T: Borrow<Q>,
 		Q: PartialEq + ?Sized,
@@ -306,7 +312,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 }
 
 /// # Retrieval
-impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	/// Extracts a value from this node only according to the given `key`.
 	///
 	/// # Panics
@@ -328,7 +334,7 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Iff a poisoned node is reached.
 	#[allow(clippy::type_complexity)]
 	#[must_use]
-	pub fn get<Q>(&self, key: &Q) -> Option<(&Node<T, K, V>, Pin<&V>)>
+	pub fn get<Q>(&self, key: &Q) -> Option<(&Node<T, K, V, C>, Pin<&V>)>
 	where
 		K: Borrow<Q>,
 		Q: Ord + ?Sized,
@@ -348,10 +354,10 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	/// Not directly, but if a poisoned node is reached, then `selector` is likely to panic.
 	#[allow(clippy::type_complexity)]
 	#[must_use]
-	pub fn find<S: for<'a> FnMut(&'a Node<T, K, V>) -> Option<Pin<&'a V>>>(
+	pub fn find<S: for<'a> FnMut(&'a Node<T, K, V, C>) -> Option<Pin<&'a V>>>(
 		&self,
 		mut local_selector: S,
-	) -> Option<(&Node<T, K, V>, Pin<&V>)> {
+	) -> Option<(&Node<T, K, V, C>, Pin<&V>)> {
 		self.try_find(|node| Ok(local_selector(node)))
 			.unwrap_infallible()
 	}
@@ -372,10 +378,10 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	///
 	/// Not directly, but if a poisoned node is reached, then `selector` is likely to panic.
 	#[allow(clippy::type_complexity)]
-	pub fn try_find<S: for<'a> FnMut(&'a Node<T, K, V>) -> Result<Option<Pin<&'a V>>, E>, E>(
+	pub fn try_find<S: for<'a> FnMut(&'a Node<T, K, V, C>) -> Result<Option<Pin<&'a V>>, E>, E>(
 		&self,
 		mut local_selector: S,
-	) -> Result<Option<(&Node<T, K, V>, Pin<&V>)>, E> {
+	) -> Result<Option<(&Node<T, K, V, C>, Pin<&V>)>, E> {
 		let mut this = self;
 		loop {
 			if let Some(found) = local_selector(this)? {
@@ -390,14 +396,21 @@ impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
 	}
 
 	//TODO: `search` and `try_search`, which should iterate using repeat `find` and/or `try_find` calls.
+
+	/// Borrows the current [`Node`] exclusively iff there is only one reference to it.
+	///
+	/// This enables for example efficient batch insertions of values.
+	pub fn as_mut(this: &mut NodeHandle<T, K, V, C>) -> Option<ExclusivePin<'_, Self>> {
+		Arc::get_mut(this)
+	}
 }
 
 /// # Exclusive Bulk Insertions
 ///
 /// These functions can be batched without incurring locking overhead between them.
 ///
-/// Use [`NodeHandle::as_exclusive`] to acquire a suitable exclusive [`Node`] reference.
-impl<T, K: Ord, V: ?Sized> Node<T, K, V> {
+/// Use [`Node::as_mut`] to acquire a suitable exclusive [`Node`] reference.
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	/// Stores `value` for `key` at the current node.
 	///
 	/// # Errors
