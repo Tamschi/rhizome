@@ -243,6 +243,7 @@ macro_rules! derive_inject_sync {
 				value: __rhizome__V,
 			) -> $crate::__::this_is_fine::Fine<$crate::__::core::pin::Pin<&$crate::sync::DynValue>, __rhizome__V> {
 				#[derive($crate::__::fruit_salad::Dyncast)]
+				#[fruit_salad($crate::__::fruit_salad)]
 				#[dyncast(#![runtime_pointer_size_assertion] unsafe __rhizome__V as dyn $Trait)]
 				#[repr(transparent)]
 				struct InjectionWrapper<__rhizome__V: 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait>(__rhizome__V);
