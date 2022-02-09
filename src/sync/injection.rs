@@ -14,7 +14,7 @@ use tap::Pipe;
 use this_is_fine::{Fine, FineExt};
 use tiptoe::RefCounter;
 
-/// Used by this module as value type inside each [`Node`].
+/// Stored [`Node`] value type used by the traits (dependency injection utilities) in this module.
 pub type DynValue = dyn 'static + Send + Sync + Dyncast;
 
 /// Provides the `::inject(node, value)` function.
