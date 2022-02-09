@@ -168,24 +168,24 @@ macro_rules! derive_trait_injectable_sync {
 	($(
 		$([$($generics:tt)*])? dyn $Trait:path
 	),*$(,)?) => {$(
-		impl<V> $crate::sync::Injectable<V> for dyn $Trait
+		impl<__rhizome__V> $crate::sync::Injectable<__rhizome__V> for dyn $Trait
 		where
-			V: 'static + Send + Sync + $Trait,
+			__rhizome__V: 'static + Send + Sync + $Trait,
 		{
-			fn inject<T, C: $crate::__::tiptoe::RefCounter>(
-				node: ::core::pin::Pin<&$crate::sync::Node<T, ::core::any::TypeId, $crate::sync::DynValue, C>>,
-				value: V,
-			) -> $crate::__::this_is_fine::Fine<::core::pin::Pin<&$crate::sync::DynValue>, V> {
+			fn inject<__rhizome__T, __rhizome__C: $crate::__::tiptoe::RefCounter>(
+				node: ::core::pin::Pin<&$crate::sync::Node<__rhizome__T, ::core::any::TypeId, $crate::sync::DynValue, __rhizome__C>>,
+				value: __rhizome__V,
+			) -> $crate::__::this_is_fine::Fine<::core::pin::Pin<&$crate::sync::DynValue>, __rhizome__V> {
 				#[derive($crate::__::fruit_salad::Dyncast)]
-				#[dyncast(#![runtime_pointer_size_assertion] unsafe V as dyn $Trait)]
+				#[dyncast(#![runtime_pointer_size_assertion] unsafe __rhizome__V as dyn $Trait)]
 				#[repr(transparent)]
-				struct InjectionWrapper<V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait>(V);
-				impl<V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait> ::core::borrow::Borrow<$crate::sync::DynValue> for InjectionWrapper<V> {
+				struct InjectionWrapper<__rhizome__V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait>(__rhizome__V);
+				impl<__rhizome__V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait> ::core::borrow::Borrow<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
 					fn borrow(&self) -> &$crate::sync::DynValue {
 						self
 					}
 				}
-				impl<V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait> ::core::borrow::BorrowMut<$crate::sync::DynValue> for InjectionWrapper<V> {
+				impl<__rhizome__V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait> ::core::borrow::BorrowMut<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
 					fn borrow_mut(&mut self) -> &mut $crate::sync::DynValue {
 						self
 					}
