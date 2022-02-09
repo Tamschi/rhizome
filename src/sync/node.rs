@@ -1,8 +1,3 @@
-//! A threading-compatible implementation.
-//!
-//! The word "node" in this documentation refers to reference-counted backing instances
-//! and not to any particular consumer-visible instance.
-
 use crate::UnwrapInfallible;
 use core::{
 	borrow::{Borrow, BorrowMut},
