@@ -12,7 +12,7 @@ use std::{
 };
 use tap::Pipe;
 use this_is_fine::{Fine, FineExt};
-use tiptoe::RefCounter;
+use tiptoe::{RefCounter, TipToe};
 
 /// Stored [`Node`] value type used by the traits (dependency injection utilities) in this module.
 pub type DynValue = dyn 'static + Send + Sync + Dyncast;
@@ -27,7 +27,8 @@ pub trait Inject<V> {
 }
 
 /// [GAT](https://rust-lang.github.io/rfcs/1598-generic_associated_types.html) workaround for [`Extract`].
-pub trait Extracted<T, C> {
+pub trait Extracted<T, C = TipToe> {
+	/// The actual type of the extracted value.
 	type Extracted;
 }
 
