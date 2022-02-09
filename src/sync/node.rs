@@ -22,6 +22,7 @@ use tiptoe::{Arc, ExclusivePin, IntrusivelyCountable, ManagedClone, RefCounter, 
 pub use crate::TypeKey;
 
 /// Shorthand for `Pin<Arc<Node<T, K, V, C = TipToe>>>`.
+#[allow(clippy::module_name_repetitions)]
 pub type NodeHandle<T, K, V, C = TipToe> = Pin<Arc<Node<T, K, V, C>>>;
 
 impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> PartialEq for Node<T, K, V, C> {
