@@ -212,11 +212,11 @@ where
 /// # Example
 ///
 /// ```rust
-/// use rhizome::sync::derive_inject_for_trait;
+/// use rhizome::sync::derive_inject;
 ///
 /// trait Trait {}
 ///
-/// derive_inject_for_trait!(dyn Trait);
+/// derive_inject!(dyn Trait);
 ///
 /// {
 ///     use rhizome::sync::{Inject, Extract};
@@ -230,7 +230,7 @@ where
 /// }
 /// ```
 #[macro_export]
-macro_rules! derive_inject_for_trait_sync {
+macro_rules! derive_inject_sync {
 	($(
 		$([$($generics:tt)*])? dyn $Trait:path
 	),*$(,)?) => {$(
@@ -266,18 +266,18 @@ macro_rules! derive_inject_for_trait_sync {
 	)*};
 }
 
-pub use crate::derive_inject_for_trait_sync as derive_inject_for_trait;
+pub use crate::derive_inject_sync as derive_inject;
 
 /// Implements dependency injection and extraction for a trait.
 ///
 /// # Example
 ///
 /// ```rust
-/// use rhizome::sync::derive_trait_dependency;
+/// use rhizome::sync::derive_dependency;
 ///
 /// trait Trait {}
 ///
-/// derive_trait_dependency!(dyn Trait);
+/// derive_dependency!(dyn Trait);
 ///
 /// {
 ///     use rhizome::sync::{Inject, RefExtract, Extract};
@@ -290,11 +290,11 @@ pub use crate::derive_inject_for_trait_sync as derive_inject_for_trait;
 /// }
 /// ```
 #[macro_export]
-macro_rules! derive_trait_dependency_sync {
+macro_rules! derive_dependency_sync {
 	($(
 		$([$($generics:tt)*])? dyn $Trait:path
 	),*$(,)?) => {$(
-		$crate::sync::derive_inject_for_trait!(dyn $Trait);
+		$crate::sync::derive_inject!(dyn $Trait);
 
 		impl $crate::sync::RefExtract for dyn $Trait {
 			type ExtractedTarget = dyn 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait;
@@ -302,4 +302,4 @@ macro_rules! derive_trait_dependency_sync {
 	)*};
 }
 
-pub use crate::derive_trait_dependency_sync as derive_trait_dependency;
+pub use crate::derive_dependency_sync as derive_dependency;
