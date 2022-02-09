@@ -1,8 +1,10 @@
 //! A threading-compatible implementation.
-//!
-//! The word "node" in this documentation refers to reference-counted backing instances
-//! and not to any particular consumer-visible instance.
 
+mod injection;
 mod node;
 
+pub use injection::{
+	derive_trait_dependency, derive_trait_injectable, BlanketSizedDependency,
+	BlanketSizedInjectable, DynValue, Extractable, Injectable, RefExtractable, RefExtracted,
+};
 pub use node::{Node, NodeHandle};

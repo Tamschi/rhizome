@@ -18,12 +18,6 @@ use core::convert::Infallible;
 
 pub mod sync;
 
-#[cfg(feature = "macros")]
-pub use dyncast::implement_dyncasts;
-
-#[cfg(feature = "macros")]
-pub use rhizome_proc_macro_definitions::{extractable, implement_type_keys, TypeKey};
-
 trait UnwrapInfallible {
 	type T;
 	fn unwrap_infallible(self) -> Self::T;
@@ -37,6 +31,7 @@ impl<T> UnwrapInfallible for Result<T, Infallible> {
 
 #[doc(hidden)]
 pub mod __ {
-	#[cfg(feature = "macros")]
-	pub use static_assertions::const_assert;
+	pub use fruit_salad;
+	pub use this_is_fine;
+	pub use tiptoe;
 }

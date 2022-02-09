@@ -36,6 +36,7 @@ is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
 maintenance = { status = "experimental" } # This may differ between branches.
 
 [dependencies]
+fruit-salad = { git = "https://github.com/Tamschi/fruit-salad.git", branch = "develop", features = ["macros"] }
 pin-project = "1.0.8"
 pinus = "0.0.4"
 tap = "1.0.1"
@@ -46,7 +47,6 @@ tracing = "0.1.26"
 [dev-dependencies]
 cargo-husky = "1.5.0"
 doc-comment = "0.3.3"
-fruit-salad = { version = "0.0.2", features = ["macros"] }
 git_info = "0.1.2"
 static_assertions = "1.1.0"
 version-sync = "0.9.1"

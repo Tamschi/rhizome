@@ -84,8 +84,7 @@ dependencies = [
 [[package]]
 name = "fruit-salad"
 version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36af42662b7c11b40aa6bc34d77cd3e29fb859dba62c4161b7e46888513c3616"
+source = "git+https://github.com/Tamschi/fruit-salad.git?branch=develop#dfb38cefe5e1093f9483e2e13c467084e60a0f6a"
 dependencies = [
  "fruit-salad_proc-macro-definitions",
  "static_assertions",
@@ -93,9 +92,8 @@ dependencies = [
 
 [[package]]
 name = "fruit-salad_proc-macro-definitions"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9cbe4dc897ec616974db4f2c39fd7c94c5e21186fbe331b664129ebd657d0de"
+version = "0.0.2"
+source = "git+https://github.com/Tamschi/fruit-salad.git?branch=develop#dfb38cefe5e1093f9483e2e13c467084e60a0f6a"
 dependencies = [
  "call2-for-syn",
  "debugless-unwrap",
@@ -339,9 +337,9 @@ dependencies = [
 
 [[package]]
 name = "rustversion"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61b3909d758bb75c79f23d4736fac9433868679d3ad2ea7a61e3c25cfda9a088"
+checksum = "f2cc38e8fa666e2de3c4aba7edeb5ffc5246c1c2ed0e3d17e560aeeba736b23f"
 
 [[package]]
 name = "scoped-tls"
