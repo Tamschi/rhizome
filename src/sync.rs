@@ -4,7 +4,7 @@ mod injection;
 mod node;
 
 pub use injection::{
-	derive_trait_dependency, derive_trait_injectable, BlanketSizedDependency,
-	BlanketSizedInjectable, DynValue, Extractable, Injectable, RefExtractable, RefExtracted,
+	derive_inject_for_trait, derive_trait_dependency, BlanketSizedDependency, BlanketSizedInject,
+	DynValue, Extract, Inject, RefExtract, RefExtracted,
 };
 pub use node::{Node, NodeHandle};

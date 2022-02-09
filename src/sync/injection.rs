@@ -3,8 +3,11 @@ use fruit_salad::Dyncast;
 use std::{
 	any::TypeId,
 	borrow::{Borrow, BorrowMut},
+	convert::Infallible,
+	marker::PhantomData,
 	mem,
 	ops::Deref,
+	option::Option,
 	pin::Pin,
 };
 use tap::Pipe;
@@ -15,7 +18,7 @@ use tiptoe::RefCounter;
 pub type DynValue = dyn 'static + Send + Sync + Dyncast;
 
 /// Provides the `::inject(node, value)` function.
-pub trait Injectable<V> {
+pub trait Inject<V> {
 	/// Tries to inject a `value` into a node
 	fn inject<T, C: RefCounter>(
 		node: Pin<&Node<T, TypeId, DynValue, C>>,
@@ -23,9 +26,19 @@ pub trait Injectable<V> {
 	) -> Fine<Pin<&DynValue>, V>;
 }
 
+/// [GAT](https://rust-lang.github.io/rfcs/1598-generic_associated_types.html) workaround for [`Extract`].
+pub trait Extracted<T, C> {
+	type Extracted;
+}
+
+pub struct RefExtractedExtracted<V: ?Sized>(Infallible, PhantomData<V>);
+impl<T, V: ?Sized, C: RefCounter> Extracted<T, C> for RefExtractedExtracted<V> {
+	type Extracted = RefExtracted<T, V, C>;
+}
+
 /// Provides the `::extract(node)` function.
-pub trait Extractable<T, C: RefCounter> {
-	/// The type of the extracted resource, by value.
+pub trait Extract {
+	/// A type constructor determining the type of the extracted resource, by value.
 	type Extracted;
 
 	/// Tries to extract this resource from a given `node` or its ancestors.
@@ -33,25 +46,40 @@ pub trait Extractable<T, C: RefCounter> {
 	/// # Errors
 	///
 	/// Iff a resource with a matching token was found but could not be cast into the correct type.
-	fn extract(
+	#[allow(clippy::type_complexity)]
+	fn extract<T, C: RefCounter>(
 		node: Pin<&Node<T, TypeId, DynValue, C>>,
-	) -> Result<Option<Self::Extracted>, Pin<&DynValue>>;
+	) -> Result<Option<<Self::Extracted as Extracted<T, C>>::Extracted>, Pin<&DynValue>>
+	where
+		Self::Extracted: Extracted<T, C>;
 }
 
-/// Causes [`Extractable`] to be blanket-implemented for `Self`, resolving into a [`RefExtracted`].
-pub trait RefExtractable {
+/// Causes [`Extract`] to be blanket-implemented for `Self`, resolving into a [`RefExtracted`].
+pub trait RefExtract {
 	/// The type to be extracted behind a shared reference if `Self` is used as token.
 	type ExtractedTarget: 'static + ?Sized;
 }
-impl<T, V: 'static + ?Sized, C: RefCounter> Extractable<T, C> for V
-where
-	V: RefExtractable,
-{
-	type Extracted = RefExtracted<T, V::ExtractedTarget, C>;
 
-	fn extract(
+/// The actual extracted type is [`RefExtracted`].
+impl<V: 'static + ?Sized> Extract for V
+where
+	V: RefExtract,
+{
+	type Extracted = RefExtractedExtracted<V::ExtractedTarget>;
+
+	#[allow(clippy::type_complexity)]
+	fn extract<T, C: RefCounter>(
 		node: Pin<&Node<T, TypeId, DynValue, C>>,
-	) -> Result<Option<Self::Extracted>, Pin<&DynValue>> {
+	) -> std::result::Result<
+		Option<
+			<RefExtractedExtracted<
+				<V as RefExtract>::ExtractedTarget,
+			> as Extracted<T, C>>::Extracted,
+		>,
+		std::pin::Pin<
+			&(dyn fruit_salad::Dyncast + std::marker::Send + std::marker::Sync + 'static),
+		>,
+	>{
 		node.get_ref()
 			.get(&TypeId::of::<V>())
 			.map(|(node, value)| {
@@ -92,33 +120,60 @@ impl<'a, T, V: ?Sized, C: RefCounter> Borrow<Pin<&'a V>> for RefExtracted<T, V, 
 	}
 }
 
-/// Causes [`Injectable`] to be blanket-implemented for `Self`.
+/// Causes [`Inject`] to be blanket-implemented for `Self`.
 ///
 /// # Example
 ///
 /// ```rust
-/// use rhizome::sync::{BlanketSizedInjectable, Injectable, Extractable};
+/// use rhizome::sync::BlanketSizedInject;
 ///
 /// struct Struct;
+///
+/// impl BlanketSizedInject for Struct {}
+///
+/// {
+///     use rhizome::sync::{Inject, Extract};
+///     use static_assertions::{assert_impl_all, assert_not_impl_any};
+///
+///     assert_impl_all!(Struct: Inject<Struct>);
+///     assert_not_impl_any!(Struct: Extract);
+/// }
 /// ```
-pub trait BlanketSizedInjectable
+pub trait BlanketSizedInject
 where
 	Self: 'static + Send + Sync + Sized,
 {
 }
 
-/// Causes [`Injectable`] and [`RefExtractable`] (and through that [`Extractable`]) to be blanket-implemented for `Self`.
+/// Causes [`Inject`] and [`RefExtract`] (and through that [`Extract`]) to be blanket-implemented for `Self`.
+///
+/// # Example
+///
+/// ```rust
+/// use rhizome::sync::BlanketSizedDependency;
+///
+/// struct Struct;
+///
+/// impl BlanketSizedDependency for Struct {}
+///
+/// {
+///     use rhizome::sync::{Inject, RefExtract, Extract};
+///     use static_assertions::assert_impl_all;
+///
+///     assert_impl_all!(Struct: Inject<Struct>, RefExtract, Extract);
+/// }
+/// ```
 pub trait BlanketSizedDependency
 where
 	Self: 'static + Send + Sync + Sized,
 {
 }
 
-impl<V> BlanketSizedInjectable for V where V: BlanketSizedDependency {}
+impl<V> BlanketSizedInject for V where V: BlanketSizedDependency {}
 
-impl<V> Injectable<V> for V
+impl<V> Inject<V> for V
 where
-	V: BlanketSizedInjectable,
+	V: BlanketSizedInject,
 {
 	fn inject<T, C: RefCounter>(
 		node: Pin<&Node<T, TypeId, DynValue, C>>,
@@ -145,7 +200,7 @@ where
 	}
 }
 
-impl<V> RefExtractable for V
+impl<V> RefExtract for V
 where
 	V: BlanketSizedDependency,
 {
@@ -157,42 +212,53 @@ where
 /// # Example
 ///
 /// ```rust
-/// use rhizome::sync::derive_trait_injectable;
+/// use rhizome::sync::derive_inject_for_trait;
 ///
 /// trait Trait {}
 ///
-/// derive_trait_injectable!(dyn Trait);
+/// derive_inject_for_trait!(dyn Trait);
+///
+/// {
+///     use rhizome::sync::{Inject, Extract};
+///     use static_assertions::{assert_impl_all, assert_not_impl_any};
+///
+///     struct Struct;
+///     impl Trait for Struct {}
+///
+///     assert_impl_all!(dyn Trait: Inject<Struct>);
+///     assert_not_impl_any!(dyn Trait: Extract);
+/// }
 /// ```
 #[macro_export]
-macro_rules! derive_trait_injectable_sync {
+macro_rules! derive_inject_for_trait_sync {
 	($(
 		$([$($generics:tt)*])? dyn $Trait:path
 	),*$(,)?) => {$(
-		impl<__rhizome__V> $crate::sync::Injectable<__rhizome__V> for dyn $Trait
+		impl<__rhizome__V> $crate::sync::Inject<__rhizome__V> for dyn $Trait
 		where
 			__rhizome__V: 'static + Send + Sync + $Trait,
 		{
 			fn inject<__rhizome__T, __rhizome__C: $crate::__::tiptoe::RefCounter>(
-				node: ::core::pin::Pin<&$crate::sync::Node<__rhizome__T, ::core::any::TypeId, $crate::sync::DynValue, __rhizome__C>>,
+				node: $crate::__::core::pin::Pin<&$crate::sync::Node<__rhizome__T, $crate::__::core::any::TypeId, $crate::sync::DynValue, __rhizome__C>>,
 				value: __rhizome__V,
-			) -> $crate::__::this_is_fine::Fine<::core::pin::Pin<&$crate::sync::DynValue>, __rhizome__V> {
+			) -> $crate::__::this_is_fine::Fine<$crate::__::core::pin::Pin<&$crate::sync::DynValue>, __rhizome__V> {
 				#[derive($crate::__::fruit_salad::Dyncast)]
 				#[dyncast(#![runtime_pointer_size_assertion] unsafe __rhizome__V as dyn $Trait)]
 				#[repr(transparent)]
-				struct InjectionWrapper<__rhizome__V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait>(__rhizome__V);
-				impl<__rhizome__V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait> ::core::borrow::Borrow<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
+				struct InjectionWrapper<__rhizome__V: 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait>(__rhizome__V);
+				impl<__rhizome__V: 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait> $crate::__::core::borrow::Borrow<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
 					fn borrow(&self) -> &$crate::sync::DynValue {
 						self
 					}
 				}
-				impl<__rhizome__V: 'static + ::core::marker::Send + ::core::marker::Sync + $Trait> ::core::borrow::BorrowMut<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
+				impl<__rhizome__V: 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait> $crate::__::core::borrow::BorrowMut<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
 					fn borrow_mut(&mut self) -> &mut $crate::sync::DynValue {
 						self
 					}
 				}
 
 				$crate::__::this_is_fine::FineExt::map_err(
-					node.get_ref().emplace(::core::any::TypeId::of::<$Trait>(), InjectionWrapper(value)),
+					node.get_ref().emplace($crate::__::core::any::TypeId::of::<$Trait>(), InjectionWrapper(value)),
 					|(_, InjectionWrapper(value))| value,
 				)
 			}
@@ -200,7 +266,7 @@ macro_rules! derive_trait_injectable_sync {
 	)*};
 }
 
-pub use crate::derive_trait_injectable_sync as derive_trait_injectable;
+pub use crate::derive_inject_for_trait_sync as derive_inject_for_trait;
 
 /// Implements dependency injection and extraction for a trait.
 ///
@@ -212,16 +278,26 @@ pub use crate::derive_trait_injectable_sync as derive_trait_injectable;
 /// trait Trait {}
 ///
 /// derive_trait_dependency!(dyn Trait);
+///
+/// {
+///     use rhizome::sync::{Inject, Extract};
+///     use static_assertions::{assert_impl_all, assert_not_impl_any};
+///
+///     struct Struct;
+///     impl Trait for Struct {}
+///
+///     assert_impl_all!(dyn Trait: Inject<Struct>, Extract);
+/// }
 /// ```
 #[macro_export]
 macro_rules! derive_trait_dependency_sync {
 	($(
 		$([$($generics:tt)*])? dyn $Trait:path
 	),*$(,)?) => {$(
-		$crate::sync::derive_trait_injectable!(dyn $Trait);
+		$crate::sync::derive_inject_for_trait!(dyn $Trait);
 
-		impl $crate::sync::RefExtractable for dyn $Trait {
-			type ExtractedTarget = dyn 'static + ::core::marker::Send + ::core::marker::Sync + $Trait;
+		impl $crate::sync::RefExtract for dyn $Trait {
+			type ExtractedTarget = dyn 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait;
 		}
 	)*};
 }

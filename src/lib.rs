@@ -30,7 +30,9 @@ impl<T> UnwrapInfallible for Result<T, Infallible> {
 }
 
 #[doc(hidden)]
+#[deprecated = "private"]
 pub mod __ {
+	pub use core;
 	pub use fruit_salad;
 	pub use this_is_fine;
 	pub use tiptoe;
