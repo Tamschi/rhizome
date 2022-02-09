@@ -76,7 +76,7 @@ where
 				<V as RefExtract>::ExtractedTarget,
 			> as Extracted<T, C>>::Extracted,
 		>,
-		std::pin::Pin<
+		Pin<
 			&(dyn fruit_salad::Dyncast + std::marker::Send + std::marker::Sync + 'static),
 		>,
 	>{
@@ -102,7 +102,7 @@ where
 
 /// An owned handle to a shared dependency.
 ///
-/// Use `.borrow()` to get a pinning reference.
+/// Use [`Borrow::borrow`] to get a pinning reference.
 pub struct RefExtracted<T, V: ?Sized, C: RefCounter> {
 	_handle: NodeHandle<T, TypeId, DynValue, C>,
 	value: Pin<*const V>,
@@ -116,7 +116,7 @@ impl<T, V: ?Sized, C: RefCounter> Deref for RefExtracted<T, V, C> {
 }
 impl<'a, T, V: ?Sized, C: RefCounter> Borrow<Pin<&'a V>> for RefExtracted<T, V, C> {
 	fn borrow(&self) -> &Pin<&'a V> {
-		unsafe { &*(&self.value as *const std::pin::Pin<*const V>).cast::<std::pin::Pin<&V>>() }
+		unsafe { &*(&self.value as *const Pin<*const V>).cast::<Pin<&V>>() }
 	}
 }
 
@@ -280,13 +280,13 @@ pub use crate::derive_inject_for_trait_sync as derive_inject_for_trait;
 /// derive_trait_dependency!(dyn Trait);
 ///
 /// {
-///     use rhizome::sync::{Inject, Extract};
+///     use rhizome::sync::{Inject, RefExtract, Extract};
 ///     use static_assertions::{assert_impl_all, assert_not_impl_any};
 ///
 ///     struct Struct;
 ///     impl Trait for Struct {}
 ///
-///     assert_impl_all!(dyn Trait: Inject<Struct>, Extract);
+///     assert_impl_all!(dyn Trait: Inject<Struct>, RefExtract, Extract);
 /// }
 /// ```
 #[macro_export]
