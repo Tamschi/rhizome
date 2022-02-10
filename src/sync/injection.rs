@@ -245,7 +245,7 @@ macro_rules! derive_inject_sync {
 			) -> $crate::__::this_is_fine::Fine<$crate::__::core::pin::Pin<&$crate::sync::DynValue>, __rhizome__V> {
 				#[derive($crate::__::fruit_salad::Dyncast)]
 				#[fruit_salad($crate::__::fruit_salad)]
-				#[dyncast(#![runtime_pointer_size_assertion] unsafe __rhizome__V as dyn $Trait)]
+				#[dyncast(#![runtime_pointer_size_assertion] unsafe __rhizome__V as (dyn 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait))]
 				#[repr(transparent)]
 				struct InjectionWrapper<__rhizome__V: 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait>(__rhizome__V);
 				impl<__rhizome__V: 'static + $crate::__::core::marker::Send + $crate::__::core::marker::Sync + $Trait> $crate::__::core::borrow::Borrow<$crate::sync::DynValue> for InjectionWrapper<__rhizome__V> {
@@ -296,6 +296,7 @@ macro_rules! derive_dependency_sync {
 	($(
 		$([$($generics:tt)*])? dyn $Trait:path
 	),*$(,)?) => {$(
+		//TODO: Add a test that ensures these implementations match.
 		$crate::sync::derive_inject!(dyn $Trait);
 
 		impl $crate::sync::RefExtract for dyn $Trait {
