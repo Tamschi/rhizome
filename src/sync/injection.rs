@@ -108,6 +108,8 @@ pub struct RefExtracted<T, V: ?Sized, C: RefCounter = TipToe> {
 	_handle: NodeHandle<T, TypeId, DynValue, C>,
 	value: Pin<*const V>,
 }
+unsafe impl<T, V: ?Sized, C: RefCounter> Send for RefExtracted<T, V, C> where V: Sync {}
+unsafe impl<T, V: ?Sized, C: RefCounter> Sync for RefExtracted<T, V, C> where V: Sync {}
 impl<T, V: ?Sized, C: RefCounter> Deref for RefExtracted<T, V, C> {
 	type Target = V;
 
