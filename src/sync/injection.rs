@@ -104,7 +104,7 @@ where
 /// An owned handle to a shared dependency.
 ///
 /// Use [`Borrow::borrow`] to get a pinning reference.
-pub struct RefExtracted<T, V: ?Sized, C: RefCounter> {
+pub struct RefExtracted<T, V: ?Sized, C: RefCounter = TipToe> {
 	_handle: NodeHandle<T, TypeId, DynValue, C>,
 	value: Pin<*const V>,
 }
