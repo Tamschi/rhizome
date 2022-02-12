@@ -86,7 +86,7 @@ where
 			.map(|(node, value)| {
 				let value_: Pin<&dyn Dyncast> = value;
 				RefExtracted {
-					_handle: node.clone_handle(),
+					handle: node.clone_handle(),
 					value: <dyn Dyncast>::dyncast_pinned::<V::ExtractedTarget>(value_)
 						.ok_or(value)?
 						.pipe(|value| unsafe {
@@ -105,7 +105,7 @@ where
 ///
 /// Use [`Borrow::borrow`] to get a pinning reference.
 pub struct RefExtracted<T, V: ?Sized, C: RefCounter = TipToe> {
-	_handle: NodeHandle<T, TypeId, DynValue, C>,
+	handle: NodeHandle<T, TypeId, DynValue, C>,
 	value: Pin<*const V>,
 }
 unsafe impl<T, V: ?Sized, C: RefCounter> Send for RefExtracted<T, V, C> where V: Sync {}
@@ -120,6 +120,15 @@ impl<T, V: ?Sized, C: RefCounter> Deref for RefExtracted<T, V, C> {
 impl<'a, T, V: ?Sized, C: RefCounter> Borrow<Pin<&'a V>> for RefExtracted<T, V, C> {
 	fn borrow(&self) -> &Pin<&'a V> {
 		unsafe { &*(&self.value as *const Pin<*const V>).cast::<Pin<&V>>() }
+	}
+}
+
+impl<T, V: ?Sized, C: RefCounter> Clone for RefExtracted<T, V, C> {
+	fn clone(&self) -> Self {
+		Self {
+			handle: self.handle.clone(),
+			value: self.value,
+		}
 	}
 }
 
