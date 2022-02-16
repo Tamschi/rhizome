@@ -5,10 +5,10 @@ use std::{
 	borrow::{Borrow, BorrowMut},
 	convert::Infallible,
 	marker::PhantomData,
-	mem,
 	ops::Deref,
 	option::Option,
 	pin::Pin,
+	ptr::{addr_of, NonNull},
 };
 use tap::Pipe;
 use this_is_fine::{Fine, FineExt};
@@ -89,11 +89,7 @@ where
 					handle: node.clone_handle(),
 					value: <dyn Dyncast>::dyncast_pinned::<V::ExtractedTarget>(value_)
 						.ok_or(value)?
-						.pipe(|value| unsafe {
-							mem::transmute::<Pin<&V::ExtractedTarget>, Pin<*const V::ExtractedTarget>>(
-								value,
-							)
-						}),
+						.pipe(|value| unsafe { Pin::new_unchecked(Dereferenceable::new(&*value)) }),
 				}
 				.pipe(Ok)
 			})
@@ -105,21 +101,24 @@ where
 ///
 /// Use [`Borrow::borrow`] to get a pinning reference.
 pub struct RefExtracted<T, V: ?Sized, C: RefCounter = TipToe> {
+	value: Pin<Dereferenceable<V>>,
 	handle: NodeHandle<T, TypeId, DynValue, C>,
-	value: Pin<*const V>,
 }
-unsafe impl<T, V: ?Sized, C: RefCounter> Send for RefExtracted<T, V, C> where V: Sync {}
-unsafe impl<T, V: ?Sized, C: RefCounter> Sync for RefExtracted<T, V, C> where V: Sync {}
 impl<T, V: ?Sized, C: RefCounter> Deref for RefExtracted<T, V, C> {
 	type Target = V;
 
 	fn deref(&self) -> &Self::Target {
-		unsafe { mem::transmute::<Pin<*const V>, &V>(self.value) }
+		&self.value
 	}
 }
 impl<'a, T, V: ?Sized, C: RefCounter> Borrow<Pin<&'a V>> for RefExtracted<T, V, C> {
 	fn borrow(&self) -> &Pin<&'a V> {
-		unsafe { &*(&self.value as *const Pin<*const V>).cast::<Pin<&V>>() }
+		unsafe {
+			//SAFETY: This casts `*const Dereferenceable<V> -> &Pin<&V>`,
+			// which are guaranteed to have the same layout (because both are
+			// internally double-pointers to `V` and the structs have `#[repr(transparent)]`).
+			&*addr_of!(self.value).cast::<Pin<&V>>()
+		}
 	}
 }
 
@@ -127,8 +126,39 @@ impl<T, V: ?Sized, C: RefCounter> Clone for RefExtracted<T, V, C> {
 	fn clone(&self) -> Self {
 		Self {
 			handle: self.handle.clone(),
-			value: self.value,
+			value: Pin::clone(&self.value),
 		}
+	}
+}
+
+/// A pointer guaranteed to be dereferenceable (shared) while it exists.
+///
+/// > Intentionally not [`Copy`] to make it easier to keep track of.
+#[repr(transparent)]
+struct Dereferenceable<T: ?Sized>(NonNull<T>);
+unsafe impl<T: ?Sized> Send for Dereferenceable<T> {}
+unsafe impl<T: ?Sized> Sync for Dereferenceable<T> {}
+impl<T: ?Sized> Dereferenceable<T> {
+	/// # Safety
+	///
+	/// The value must stay in place while this instance or one of its clones exist.
+	unsafe fn new(ref_: &T) -> Self {
+		Self(ref_.into())
+	}
+}
+impl<T: ?Sized> Deref for Dereferenceable<T> {
+	type Target = T;
+
+	fn deref(&self) -> &Self::Target {
+		unsafe {
+			//SAFETY: This is guaranteed to be valid if `::new`'s soundness contract is followed.
+			self.0.as_ref()
+		}
+	}
+}
+impl<T: ?Sized> Clone for Dereferenceable<T> {
+	fn clone(&self) -> Self {
+		Self { ..*self }
 	}
 }
 
