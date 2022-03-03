@@ -84,7 +84,7 @@ dependencies = [
 [[package]]
 name = "fruit-salad"
 version = "0.0.2"
-source = "git+https://github.com/Tamschi/fruit-salad.git?branch=develop#4fff030707c8de3c22ff56262317f08551880593"
+source = "git+https://github.com/Tamschi/fruit-salad.git?branch=develop#2b21a85a501c2c933310e49bac7585d46c5b33d9"
 dependencies = [
  "fruit-salad_proc-macro-definitions",
  "static_assertions",
@@ -93,7 +93,7 @@ dependencies = [
 [[package]]
 name = "fruit-salad_proc-macro-definitions"
 version = "0.0.2"
-source = "git+https://github.com/Tamschi/fruit-salad.git?branch=develop#4fff030707c8de3c22ff56262317f08551880593"
+source = "git+https://github.com/Tamschi/fruit-salad.git?branch=develop#2b21a85a501c2c933310e49bac7585d46c5b33d9"
 dependencies = [
  "call2-for-syn",
  "debugless-unwrap",
