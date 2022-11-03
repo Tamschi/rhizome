@@ -1,13 +1,14 @@
 use crate::UnwrapInfallible;
 use core::{
 	borrow::{Borrow, BorrowMut},
+	cell::UnsafeCell,
 	hash::{Hash, Hasher},
+	marker::PhantomPinned,
 	mem::MaybeUninit,
 	pin::Pin,
 	ptr,
 };
 use pinus::{prelude::*, sync::PressedPineMap};
-use std::marker::PhantomPinned;
 use tap::Pipe;
 use this_is_fine::Fine;
 
@@ -37,8 +38,24 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Hash for Node<T, K, V, C> {
 /// A reference-counted tagged inverse map tree node.
 ///
 /// Construct this indirectly via a [`NodeHandle`] constructor.
-#[pin_project::pin_project]
+#[repr(transparent)]
 pub struct Node<T, K: Ord, V: ?Sized, C: RefCounter = TipToe> {
+	/// The entirety of this instance must be represented by an `UnsafeCell`
+	/// in order to make [`Node::clone_handle`] sound under Strict Provenance.
+	inner: UnsafeCell<NodeInner<T, K, V, C>>,
+}
+
+unsafe impl<T, K: Ord, V: ?Sized, C: RefCounter> Sync for Node<T, K, V, C>
+where
+	T: Send + Sync,
+	K: Send + Sync,
+	V: Send + Sync,
+	C: Send + Sync,
+{
+}
+
+#[pin_project::pin_project]
+struct NodeInner<T, K: Ord, V: ?Sized, C: RefCounter = TipToe> {
 	/// This crate walks along the graph a whole lot and normally doesn't do much refcounting,
 	/// so the offset version is likely a bit better here.
 	///
@@ -61,13 +78,18 @@ where
 	C: ManagedClone,
 {
 	unsafe fn managed_clone(&self) -> Self {
+		let this = unsafe { &*self.inner.get() };
+
 		// SAFETY: Everything is wrapped as before.
 		Self {
-			parent: Option::managed_clone(&self.parent),
-			tag: self.tag.managed_clone(),
-			local_scope: self.local_scope.managed_clone(),
-			ref_counter: self.ref_counter.managed_clone(),
-			pinned: self.pinned.managed_clone(),
+			inner: NodeInner {
+				parent: Option::managed_clone(&this.parent),
+				tag: this.tag.managed_clone(),
+				local_scope: this.local_scope.managed_clone(),
+				ref_counter: this.ref_counter.managed_clone(),
+				pinned: this.pinned.managed_clone(),
+			}
+			.into(),
 		}
 	}
 }
@@ -76,7 +98,10 @@ unsafe impl<T, K: Ord, V: ?Sized, C: RefCounter> IntrusivelyCountable for Node<T
 	type RefCounter = C;
 
 	fn ref_counter(&self) -> &Self::RefCounter {
-		&self.ref_counter
+		unsafe {
+			&*field_offset::offset_of!(NodeInner<T,K,V,C> => ref_counter)
+				.apply_ptr(self.inner.get())
+		}
 	}
 }
 
@@ -88,11 +113,14 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		C: Default,
 	{
 		Self {
-			parent: None,
-			tag,
-			local_scope: PressedPineMap::new().pin(),
-			ref_counter: C::default(),
-			pinned: PhantomPinned,
+			inner: NodeInner {
+				parent: None,
+				tag,
+				local_scope: PressedPineMap::new().pin(),
+				ref_counter: C::default(),
+				pinned: PhantomPinned,
+			}
+			.into(),
 		}
 		.pipe(Arc::pin)
 	}
@@ -105,11 +133,14 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		C: Default,
 	{
 		Self {
-			parent: None,
-			tag,
-			local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
-			ref_counter: C::default(),
-			pinned: PhantomPinned,
+			inner: NodeInner {
+				parent: None,
+				tag,
+				local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
+				ref_counter: C::default(),
+				pinned: PhantomPinned,
+			}
+			.into(),
 		}
 		.pipe(Arc::pin)
 	}
@@ -122,11 +153,14 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		C: Default,
 	{
 		Self {
-			parent: Some(parent),
-			tag,
-			local_scope: PressedPineMap::new().pin(),
-			ref_counter: C::default(),
-			pinned: PhantomPinned,
+			inner: NodeInner {
+				parent: Some(parent),
+				tag,
+				local_scope: PressedPineMap::new().pin(),
+				ref_counter: C::default(),
+				pinned: PhantomPinned,
+			}
+			.into(),
 		}
 		.pipe(Arc::pin)
 	}
@@ -144,11 +178,14 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		C: Default,
 	{
 		Self {
-			parent: Some(parent),
-			tag,
-			local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
-			ref_counter: C::default(),
-			pinned: PhantomPinned,
+			inner: NodeInner {
+				parent: Some(parent),
+				tag,
+				local_scope: PressedPineMap::with_capacity(capacity_bytes).pin(),
+				ref_counter: C::default(),
+				pinned: PhantomPinned,
+			}
+			.into(),
 		}
 		.pipe(Arc::pin)
 	}
@@ -193,7 +230,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	where
 		V: Sized,
 	{
-		self.local_scope.insert(key, value)
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope.insert(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -205,7 +243,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	where
 		W: BorrowMut<V>,
 	{
-		self.local_scope.emplace(key, value)
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope.emplace(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -218,7 +257,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&V>, (K, F)> {
-		self.local_scope.emplace_with_unpinned(key, value_factory)
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope.emplace_with_unpinned(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -235,7 +275,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
-		self.local_scope
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope
 			.try_emplace_with_unpinned(key, value_factory)
 	}
 
@@ -252,7 +293,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&V>, (K, F)> {
-		self.local_scope.emplace_with(key, value_factory)
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope.emplace_with(key, value_factory)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -269,13 +311,15 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Result<Fine<Pin<&V>, (K, F)>, E> {
-		self.local_scope.try_emplace_with(key, value_factory)
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope.try_emplace_with(key, value_factory)
 	}
 
 	/// Retrieves a reference to this node's parent node, if available.
 	#[must_use]
 	pub fn parent(&self) -> Option<&Node<T, K, V, C>> {
-		self.parent.as_deref()
+		let this = unsafe { &*self.inner.get() };
+		this.parent.as_deref()
 	}
 
 	/// Retrieves a reference to this node's root node, which may be itself.
@@ -299,7 +343,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	{
 		let mut this = self;
 		loop {
-			if this.tag.borrow() == tag {
+			let this_ = unsafe { &*this.inner.get() };
+			if this_.tag.borrow() == tag {
 				break Some(this);
 			}
 			this = this.parent()?;
@@ -320,7 +365,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		K: Borrow<Q>,
 		Q: Ord + ?Sized,
 	{
-		self.local_scope.get(key)
+		let this = unsafe { &*self.inner.get() };
+		this.local_scope.get(key)
 	}
 
 	/// Extracts a value from the node tree according to the given `key`.
@@ -417,7 +463,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	where
 		V: Sized,
 	{
-		self.project().local_scope.insert_mut(key, value)
+		let this = unsafe { Pin::new_unchecked(&mut *self.inner.get()) };
+		this.project().local_scope.insert_mut(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -429,7 +476,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 	where
 		W: BorrowMut<V>,
 	{
-		self.project().local_scope.emplace_mut(key, value)
+		let this = unsafe { Pin::new_unchecked(&mut *self.inner.get()) };
+		this.project().local_scope.emplace_mut(key, value)
 	}
 
 	/// Stores `value` for `key` at the current node.
@@ -442,7 +490,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&mut V>, (K, F)> {
-		self.project()
+		let this = unsafe { Pin::new_unchecked(&mut *self.inner.get()) };
+		this.project()
 			.local_scope
 			.emplace_with_mut_unpinned(key, value_factory)
 	}
@@ -461,7 +510,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Result<Fine<Pin<&mut V>, (K, F)>, E> {
-		self.project()
+		let this = unsafe { Pin::new_unchecked(&mut *self.inner.get()) };
+		this.project()
 			.local_scope
 			.try_emplace_with_mut_unpinned(key, value_factory)
 	}
@@ -479,7 +529,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Fine<Pin<&mut V>, (K, F)> {
-		self.project()
+		let this = unsafe { Pin::new_unchecked(&mut *self.inner.get()) };
+		this.project()
 			.local_scope
 			.emplace_with_mut(key, value_factory)
 	}
@@ -498,7 +549,8 @@ impl<T, K: Ord, V: ?Sized, C: RefCounter> Node<T, K, V, C> {
 		key: K,
 		value_factory: F,
 	) -> Result<Fine<Pin<&mut V>, (K, F)>, E> {
-		self.project()
+		let this = unsafe { Pin::new_unchecked(&mut *self.inner.get()) };
+		this.project()
 			.local_scope
 			.try_emplace_with_mut(key, value_factory)
 	}

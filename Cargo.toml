@@ -36,6 +36,7 @@ is-it-maintained-open-issues = { repository = "Tamschi/rhizome" }
 maintenance = { status = "experimental" } # This may differ between branches.
 
 [dependencies]
+field-offset = "0.3.4"
 fruit-salad = { git = "https://github.com/Tamschi/fruit-salad.git", branch = "develop", features = ["macros"] }
 pin-project = "1.0.8"
 pinus = "0.0.4"
