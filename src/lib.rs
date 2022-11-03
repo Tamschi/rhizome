@@ -10,9 +10,8 @@
 #![allow(clippy::semicolon_if_nothing_returned)]
 
 #[cfg(doctest)]
-pub mod readme {
-	doc_comment::doctest!("../README.md");
-}
+#[doc = include_str!("../README.md")]
+mod readme {}
 
 use core::convert::Infallible;
 
