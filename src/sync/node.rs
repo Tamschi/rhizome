@@ -20,15 +20,15 @@ pub use crate::TypeKey;
 #[allow(clippy::module_name_repetitions)]
 pub type NodeHandle<T, K, V, C = TipToe> = Pin<Arc<Node<T, K, V, C>>>;
 
-impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> PartialEq for Node<T, K, V, C> {
+impl<T, K: Ord, V: ?Sized, C: RefCounter> PartialEq for Node<T, K, V, C> {
 	fn eq(&self, other: &Self) -> bool {
 		ptr::eq(self, other)
 	}
 }
 
-impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> Eq for Node<T, K, V, C> {}
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Eq for Node<T, K, V, C> {}
 
-impl<'a, T, K: Ord, V: ?Sized, C: RefCounter> Hash for Node<T, K, V, C> {
+impl<T, K: Ord, V: ?Sized, C: RefCounter> Hash for Node<T, K, V, C> {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		state.write_usize(self as *const _ as usize)
 	}
