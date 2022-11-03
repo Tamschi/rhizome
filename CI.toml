@@ -1,6 +1,1 @@
-[workspace]
-members = [
-	".",
-]
-
 [patch.crates-io]
