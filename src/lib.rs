@@ -1,4 +1,13 @@
-#![warn(clippy::pedantic, clippy::style)]
+//! Small ephemeral infallible-ish backtracing pinned-dependency injection.
+//!
+//! Prefer to pass only exclusive borrows around, as [`Waypoint`] is a few pointers wide.
+//!
+//! # Panic-safety
+//!
+//! rhizome never panics (or errors) on its own and escalates panics (and errors) originating from
+//! [`Injectable::provision`] and inside [`Waypoint::provide_with`] strictly to the direct caller.
+
+#![warn(clippy::pedantic, clippy::style, missing_docs)]
 
 use std::{
     alloc::Layout,
@@ -7,21 +16,23 @@ use std::{
     mem::{self, ManuallyDrop, MaybeUninit},
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use eros::TypeSet;
 
+/// Hierarchical runtime dependency container
 pub struct Waypoint<'a> {
     next: Next<'a>,
     managed: BTreeMap<TypeId, Raw>,
-    tag: TypeId,
+    tag: TypeId, //TODO: Benchmark lifting this behind `&'static TypeId`.
 }
 
 impl Waypoint<'static> {
+    /// Creates a new free-standing
     pub fn new_root<T: ?Sized + Tag>() -> Self {
         Self {
-            next: Next::Stop(Arc::new(Mutex::new(BTreeMap::new()))),
+            next: Next::Stop(Box::new(BTreeMap::new())),
             managed: BTreeMap::new(),
             tag: TypeId::of::<T>(),
         }
@@ -40,27 +51,7 @@ impl Waypoint<'_> {
         }
     }
 
-    pub fn squash<T: ?Sized + Tag>(&mut self) -> Waypoint<'static> {
-        let mut managed = BTreeMap::new();
-        let mut current = self;
-        loop {
-            for (&key, raw) in &current.managed {
-                managed.entry(key).or_insert(raw.clone());
-            }
-            match &mut current.next {
-                Next::Waypoint(next) => current = next,
-                Next::Stop(arc) => {
-                    break Waypoint {
-                        next: Next::Stop(Arc::clone(arc)),
-                        managed,
-                        tag: TypeId::of::<T>(),
-                    };
-                }
-            }
-        }
-    }
-
-    pub fn inject<T: ?Sized + Injectable>(
+    pub fn provide<T: ?Sized + Injectable>(
         &mut self,
         value: Pin<Arc<T>>,
     ) -> Result<Pin<&mut T>, Pin<Arc<T>>> {
@@ -73,7 +64,7 @@ impl Waypoint<'_> {
         })
     }
 
-    pub fn inject_with<T: ?Sized + Injectable, F: FnOnce() -> Pin<Arc<T>>>(
+    pub fn provide_with<T: ?Sized + Injectable, F: FnOnce() -> Pin<Arc<T>>>(
         &mut self,
         make_value: F,
     ) -> Result<Pin<&mut T>, F> {
@@ -121,7 +112,7 @@ impl Waypoint<'_> {
         })
     }
 
-    pub fn eject_local<T: ?Sized + Injectable>(&mut self) -> Option<Pin<Arc<T>>> {
+    pub fn retract_local<T: ?Sized + Injectable>(&mut self) -> Option<Pin<Arc<T>>> {
         unsafe {
             self.managed
                 .remove(&TypeId::of::<T>())
@@ -132,7 +123,7 @@ impl Waypoint<'_> {
 
 enum Next<'a> {
     Waypoint(&'a mut Waypoint<'a>),
-    Stop(Arc<Mutex<BTreeMap<TypeId, Raw>>>),
+    Stop(Box<BTreeMap<TypeId, Raw>>),
 }
 
 struct Raw(
@@ -142,6 +133,16 @@ struct Raw(
         unsafe fn(to_increment: MaybeUninit<*const dyn Any>),
     ),
 );
+
+/// # Safety
+///
+/// Immutably wraps `Arc<dyn … + Send + Sync>`.
+unsafe impl Send for Raw {}
+
+/// # Safety
+///
+/// Immutably wraps `Arc<dyn … + Send + Sync>`.
+unsafe impl Sync for Raw {}
 
 impl Drop for Raw {
     fn drop(&mut self) {
