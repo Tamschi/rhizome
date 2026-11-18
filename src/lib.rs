@@ -237,18 +237,7 @@ impl Waypoint<'_> {
         }
     }
 
-    //TODO
-    /// Iff not locally occupied,
-    /// tries to provide the [`Ok`] return value of `make_value` for extractions of `T` at `self`
-    /// and (where not shadowed) its children.
-    // pub fn try_provide_with<
-    //     T: ?Sized + Injectable,
-    //     E,
-    //     F: FnOnce(&mut Waypoint<'_>) -> Result<Pin<Arc<T>>, E>,
-    // >(
-    //     &mut self,
-    //     make_value: F,
-    // ) -> Result<Result<Pin<impl '_ + DerefMut<Target = T>>, F>, E>;
+    //TODO: Add typestate so that branching can only happen after provision.
 
     /// Extracts a resource keyed with *exact* `T`.
     ///
