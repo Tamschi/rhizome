@@ -7,7 +7,7 @@ impl Tag for dyn ATag {}
 
 trait AnInjectable: Send + Sync {}
 impl Injectable for dyn AnInjectable {
-    const INJECT_AT: &'static [TypeId] = &[];
+    const PROVISION_AT: &'static [TypeId] = &[];
 
     type ErrorSet = ();
 
@@ -19,8 +19,8 @@ impl Injectable for dyn AnInjectable {
 
     type Provided = Pin<Arc<Self>>;
 
-    fn provide(self: Pin<Arc<Self>>) -> Self::Provided {
-        self
+    fn provide(self: &Pin<Arc<Self>>) -> Self::Provided {
+        Pin::clone(self)
     }
 }
 
@@ -63,23 +63,14 @@ fn demo() {
         .err()
         .unwrap();
 
-    waypoint.retract_local::<dyn AnInjectable>().unwrap();
-    waypoint
-        .retract_local::<dyn AnInjectable>()
-        .ok_or(())
-        .err()
-        .unwrap();
-
     let b = waypoint.extract::<dyn AnInjectable>().unwrap();
     let a = waypoint2.extract::<dyn AnInjectable>().unwrap();
     assert_eq!(&raw const *a, &raw const *b);
 
-    waypoint2.retract_local::<dyn AnInjectable>().unwrap();
     waypoint2
         .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
         .ok()
         .unwrap();
-    waypoint2.retract_local::<dyn AnInjectable>().unwrap();
 
     Waypoint::new_root::<dyn ATag>()
         .extract::<dyn AnInjectable>()
