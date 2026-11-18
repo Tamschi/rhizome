@@ -4,8 +4,8 @@
 //!
 //! # Panic-safety
 //!
-//! rhizome never panics (or errors) on its own and escalates panics (and errors) originating from
-//! [`Injectable::provision`] and inside [`Waypoint::provide_with`] strictly to the direct caller.
+//! rhizome never panics (or errors) on its own, except out of memory, and escalates panics (and errors)
+//! originating from [`Injectable::provision`] and inside [`Waypoint::provide_with`] strictly to the direct caller.
 
 #![warn(clippy::pedantic, clippy::style, missing_docs)]
 
@@ -38,7 +38,7 @@ struct Inline<'a> {
 }
 
 struct Lifted {
-    next: LiftedNext,
+    next: Option<Arc<Mutex<Lifted>>>,
     managed: BTreeMap<TypeId, Raw>,
     tag: TypeId,
 }
@@ -47,7 +47,7 @@ impl Waypoint<'static> {
     /// Creates a new [`Waypoint`] hierarchy.
     pub fn new_root<T: ?Sized + Tag>() -> Self {
         Self(Waypoint_::Inline(Inline {
-            next: InlineNext::Stop(Box::new(BTreeMap::new())),
+            next: InlineNext::None,
             managed: BTreeMap::new(),
             tag: TypeId::of::<T>(),
         }))
@@ -143,9 +143,9 @@ impl Waypoint<'_> {
                 let mut uninit = Arc::new_uninit();
                 let mutex = Mutex::new(Lifted {
                     next: match next {
-                        InlineNext::Waypoint(waypoint) => LiftedNext::Lifted(waypoint.lift()),
+                        InlineNext::Waypoint(waypoint) => Some(waypoint.lift()),
                         InlineNext::Lifted(_) => unreachable!("Lifting is transitive."),
-                        InlineNext::Stop(root) => LiftedNext::Stop(mem::take(&mut *root)),
+                        InlineNext::None => None,
                     },
                     managed: mem::take(managed),
                     tag: *tag,
@@ -240,40 +240,17 @@ impl Waypoint<'_> {
     /// Iff not locally occupied,
     /// tries to provide the [`Ok`] return value of `make_value` for extractions of `T` at `self`
     /// and (where not shadowed) its children.
-    pub fn try_provide_with<T: ?Sized + Injectable, E, F: FnOnce() -> Result<Pin<Arc<T>>, E>>(
+    pub fn try_provide_with<
+        T: ?Sized + Injectable,
+        E,
+        F: FnOnce(&mut Waypoint<'_>) -> Result<Pin<Arc<T>>, E>,
+    >(
         &mut self,
         make_value: F,
-    ) -> Result<Result<Pin<impl DerefMut<Target = T>>, F>, E> {
-        match &mut self.0 {
-            Waypoint_::Inline(inline) => {
-                let Entry::Vacant(entry) = inline.managed.entry(TypeId::of::<T>()) else {
-                    return Ok(Err(make_value));
-                };
-                make_value().map(|value| {
-                    Ok({
-                        let raw = entry.insert(value.into());
-                        unsafe {
-                            Pin::new_unchecked(DerefEither::Left(Pin::into_inner_unchecked(
-                                raw.as_mut::<T>(),
-                            )))
-                        }
-                    })
-                })
-            }
-            Waypoint_::Lifted(lifted) => {
-                let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
-                let Entry::Vacant(entry) = guard.managed.entry(TypeId::of::<T>()) else {
-                    return Ok(Err(make_value));
-                };
-                Ok(Ok({
-                    let raw = entry.insert(make_value()?.into());
-                    unsafe {
-                        let ptr = raw.as_mut_ptr();
-                        Pin::new_unchecked(DerefEither::Right(projected(guard, ptr)))
-                    }
-                }))
-            }
-        }
+    ) -> Result<Result<Pin<impl '_ + DerefMut<Target = T>>, F>, E> {
+        Ok(Ok(unsafe {
+            Pin::new_unchecked(DerefEither::<&mut T, &mut T>::Left(todo!()))
+        }))
     }
 
     /// Extracts a resource keyed with *exact* `T`.
@@ -284,99 +261,144 @@ impl Waypoint<'_> {
     /// - <code>&lt;T as [`Injectable`]>::[PROVISION_AT](`Injectable::PROVISION_AT`)></code> includes its [`Tag`],
     /// - the root is reached (at which point provisioning is attempted without [`Tag`]).
     pub fn extract<T: ?Sized + Injectable>(&mut self) -> eros::Result<T::Provided, T::ErrorSet> {
-        let mut current = self;
+        //TODO: This can be implemented iteratively. Somehow.
 
-        let lifted = loop {
-            match &mut current.0 {
-                Waypoint_::Inline(inline) => {
-                    let key = match inline.managed.entry(TypeId::of::<T>()) {
-                        Entry::Occupied(entry) => {
-                            return Ok(unsafe { T::provide(&entry.get().to_virtual_arc()) });
+        let key = TypeId::of::<T>();
+        match &mut self.0 {
+            Waypoint_::Inline(Inline { next, managed, tag }) => {
+                if let Some(raw) = managed.get(&key) {
+                    // Found
+                    Ok(unsafe { T::provide(&raw.to_virtual_arc()) })
+                } else if T::PROVISION_AT.contains(tag) {
+                    // Tag match
+                    let tag = *tag;
+                    let raw = T::provision(self, Some(tag))?.into();
+                    match &mut self.0 {
+                        Waypoint_::Inline(inline) => Ok(unsafe {
+                            T::provide(
+                                &inline
+                                    .managed
+                                    .entry(key)
+                                    .insert_entry(raw)
+                                    .get()
+                                    .to_virtual_arc(),
+                            )
+                        }),
+                        Waypoint_::Lifted(lifted) => Ok(unsafe {
+                            T::provide(
+                                &lifted
+                                    .lock()
+                                    .unwrap_or_else(|_| unreachable!())
+                                    .managed
+                                    .entry(key)
+                                    .insert_entry(raw)
+                                    .get()
+                                    .to_virtual_arc(),
+                            )
+                        }),
+                    }
+                } else {
+                    // Next
+                    match next {
+                        InlineNext::Waypoint(waypoint) => waypoint.extract::<T>(),
+                        InlineNext::Lifted(lifted) => {
+                            Waypoint(Waypoint_::Lifted(Arc::clone(lifted))).extract::<T>()
                         }
-                        Entry::Vacant(entry) => {
-                            if T::PROVISION_AT.contains(&inline.tag) {
-                                let raw = entry.insert(T::provision(Some(inline.tag))?.into());
-                                return Ok(unsafe { T::provide(&raw.to_virtual_arc()) });
-                            } else {
-                                entry.into_key()
+                        InlineNext::None => {
+                            let raw = T::provision(self, None)?.into();
+                            match &mut self.0 {
+                                Waypoint_::Inline(inline) => Ok(unsafe {
+                                    T::provide(
+                                        &inline
+                                            .managed
+                                            .entry(key)
+                                            .insert_entry(raw)
+                                            .get()
+                                            .to_virtual_arc(),
+                                    )
+                                }),
+                                Waypoint_::Lifted(lifted) => Ok(unsafe {
+                                    T::provide(
+                                        &lifted
+                                            .lock()
+                                            .unwrap_or_else(|_| unreachable!())
+                                            .managed
+                                            .entry(key)
+                                            .insert_entry(raw)
+                                            .get()
+                                            .to_virtual_arc(),
+                                    )
+                                }),
                             }
                         }
-                    };
-
-                    match &mut inline.next {
-                        InlineNext::Waypoint(next) => current = next,
-                        InlineNext::Lifted(lifted) => break lifted,
-                        InlineNext::Stop(root) => {
-                            return match root.entry(key) {
-                                Entry::Occupied(entry) => {
-                                    Ok(unsafe { T::provide(&entry.get().to_virtual_arc()) })
-                                }
-                                Entry::Vacant(entry) => T::provision(None).map(|value| {
-                                    let raw = entry.insert(value.into());
-                                    unsafe { T::provide(&raw.to_virtual_arc()) }
-                                }),
-                            };
+                    }
+                }
+            }
+            Waypoint_::Lifted(lifted) => {
+                let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    let Lifted { next, managed, tag } = &mut *guard;
+                    if let Some(raw) = managed.get(&key) {
+                        // Found
+                        Ok(unsafe { T::provide(&raw.to_virtual_arc()) })
+                    } else if T::PROVISION_AT.contains(tag) {
+                        // Tag match
+                        let raw: Raw = T::provision(
+                            &mut Waypoint(Waypoint_::Lifted(Arc::clone(&lifted))),
+                            Some(*tag),
+                        )?
+                        .into();
+                        Ok(unsafe {
+                            T::provide(
+                                &lifted
+                                    .lock()
+                                    .unwrap_or_else(|_| unreachable!())
+                                    .managed
+                                    .entry(key)
+                                    .insert_entry(raw)
+                                    .get()
+                                    .to_virtual_arc(),
+                            )
+                        })
+                    } else {
+                        // Next
+                        match next {
+                            Some(lifted) => {
+                                Waypoint(Waypoint_::Lifted(Arc::clone(lifted))).extract::<T>()
+                            }
+                            None => {
+                                let raw = T::provision(
+                                    &mut Waypoint(Waypoint_::Lifted(Arc::clone(lifted))),
+                                    None,
+                                )?
+                                .into();
+                                Ok(unsafe {
+                                    T::provide(
+                                        &lifted
+                                            .lock()
+                                            .unwrap_or_else(|_| unreachable!())
+                                            .managed
+                                            .entry(key)
+                                            .insert_entry(raw)
+                                            .get()
+                                            .to_virtual_arc(),
+                                    )
+                                })
+                            }
                         }
                     }
-                }
-                Waypoint_::Lifted(lifted) => break lifted,
+                }));
+                drop(guard);
+                result.unwrap_or_else(|panic| resume_unwind(panic))
             }
-        };
-
-        let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
-        let result = catch_unwind(AssertUnwindSafe(|| guard.extract::<T>()));
-        drop(guard);
-        result.unwrap_or_else(|panic| resume_unwind(panic))
-    }
-}
-
-impl Lifted {
-    pub fn extract<T: ?Sized + Injectable>(&mut self) -> eros::Result<T::Provided, T::ErrorSet> {
-        let key = match self.managed.entry(TypeId::of::<T>()) {
-            Entry::Occupied(entry) => {
-                return Ok(unsafe { T::provide(&entry.get().to_virtual_arc()) });
-            }
-            Entry::Vacant(entry) => {
-                if T::PROVISION_AT.contains(&self.tag) {
-                    let raw = entry.insert(T::provision(Some(self.tag))?.into());
-                    return Ok(unsafe { T::provide(&raw.to_virtual_arc()) });
-                } else {
-                    entry.into_key()
-                }
-            }
-        };
-
-        let lifted = match &mut self.next {
-            LiftedNext::Lifted(lifted) => lifted,
-            LiftedNext::Stop(root) => {
-                return match root.entry(key) {
-                    Entry::Occupied(entry) => {
-                        Ok(unsafe { T::provide(&entry.get().to_virtual_arc()) })
-                    }
-                    Entry::Vacant(entry) => T::provision(None).map(|value| {
-                        let raw = entry.insert(value.into());
-                        unsafe { T::provide(&raw.to_virtual_arc()) }
-                    }),
-                };
-            }
-        };
-
-        let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
-        let result = catch_unwind(AssertUnwindSafe(|| guard.extract::<T>()));
-        drop(guard);
-        result.unwrap_or_else(|panic| resume_unwind(panic))
+        }
     }
 }
 
 enum InlineNext<'a> {
     Waypoint(&'a mut Waypoint<'a>),
     Lifted(Arc<Mutex<Lifted>>),
-    Stop(Box<BTreeMap<TypeId, Raw>>),
-}
-
-enum LiftedNext {
-    Lifted(Arc<Mutex<Lifted>>),
-    Stop(Box<BTreeMap<TypeId, Raw>>),
+    None,
 }
 
 struct Raw(
@@ -514,8 +536,15 @@ pub trait Injectable: 'static + Send + Sync {
     /// that may occur in the returned [`eros::ErrorUnion`].
     type ErrorSet: TypeSet;
 
-    //TODO: Allow this to pull in further dependencies.
-    fn provision(tag: Option<TypeId>) -> eros::Result<Pin<Arc<Self>>, Self::ErrorSet>;
+    /// Called to auto-provision `Self` (at a [`Waypoint`] with matched tag among [`Self::PROVISION_AT`] or the root [`Waypoint`]).
+    ///
+    /// Iff `Self` has `Self` as dependency and resolves without stack overflow,
+    /// the outermost on "wins" and inner instances are successively released.\
+    /// (This circumstance may raise a panic in future incompatible versions.)
+    fn provision(
+        at: &mut Waypoint<'_>,
+        matched_tag: Option<TypeId>,
+    ) -> eros::Result<Pin<Arc<Self>>, Self::ErrorSet>;
 
     /// Derives the [`Self::Provided`] value from the provisioned value.
     fn provide(self: &Pin<Arc<Self>>) -> Self::Provided;

@@ -11,7 +11,10 @@ impl Injectable for dyn AnInjectable {
 
     type ErrorSet = ();
 
-    fn provision(_tag: Option<TypeId>) -> eros::Result<Pin<Arc<Self>>, Self::ErrorSet> {
+    fn provision(
+        _at: &mut Waypoint<'_>,
+        _matched_tag: Option<TypeId>,
+    ) -> eros::Result<Pin<Arc<Self>>, Self::ErrorSet> {
         struct Struct;
         impl AnInjectable for Struct {}
         Ok(Arc::pin(Struct))
@@ -27,50 +30,42 @@ impl Injectable for dyn AnInjectable {
 #[test]
 fn demo() {
     let mut waypoint = Waypoint::new_root::<dyn ATag>();
-    waypoint
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .ok()
-        .unwrap();
-    waypoint
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .err()
-        .unwrap();
+    let value =
+        <dyn AnInjectable>::provision(&mut waypoint, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint.provide(value).ok().unwrap();
+    let value1 =
+        <dyn AnInjectable>::provision(&mut waypoint, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint.provide(value1).err().unwrap();
 
     let mut waypoint = waypoint.new::<dyn ATag>();
-    waypoint
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .ok()
-        .unwrap();
-    waypoint
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .err()
-        .unwrap();
+    let value2 =
+        <dyn AnInjectable>::provision(&mut waypoint, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint.provide(value2).ok().unwrap();
+    let value3 =
+        <dyn AnInjectable>::provision(&mut waypoint, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint.provide(value3).err().unwrap();
 
     let mut waypoint2 = waypoint.lift_and_new::<dyn ATag>();
-    waypoint2
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .ok()
-        .unwrap();
+    let value4 =
+        <dyn AnInjectable>::provision(&mut waypoint2, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint2.provide(value4).ok().unwrap();
     drop(waypoint);
 
     let mut waypoint = waypoint2.new::<dyn ATag>();
-    waypoint
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .ok()
-        .unwrap();
-    waypoint
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .err()
-        .unwrap();
+    let value5 =
+        <dyn AnInjectable>::provision(&mut waypoint, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint.provide(value5).ok().unwrap();
+    let value6 =
+        <dyn AnInjectable>::provision(&mut waypoint, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint.provide(value6).err().unwrap();
 
     let b = waypoint.extract::<dyn AnInjectable>().unwrap();
     let a = waypoint2.extract::<dyn AnInjectable>().unwrap();
-    assert_eq!(&raw const *a, &raw const *b);
+    assert_ne!(&raw const *a, &raw const *b);
 
-    waypoint2
-        .provide(<dyn AnInjectable>::provision(TypeId::of::<dyn ATag>().into()).expect(""))
-        .ok()
-        .unwrap();
+    let value7 =
+        <dyn AnInjectable>::provision(&mut waypoint2, TypeId::of::<dyn ATag>().into()).expect("");
+    waypoint2.provide(value7).err().unwrap();
 
     Waypoint::new_root::<dyn ATag>()
         .extract::<dyn AnInjectable>()
