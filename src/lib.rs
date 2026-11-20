@@ -6,6 +6,11 @@
 //!
 //! rhizome never panics (or errors) on its own, except out of memory, and escalates panics (and errors)
 //! originating from [`Injectable::provision`] and inside [`Waypoint::provide_with`] strictly to the direct caller.
+//!
+//! # Notes
+//!
+//! The drop order *and granularity* of resources is not specified until all related [`Waypoint`]s have been dropped.
+//! Don't rely on it!
 
 #![warn(clippy::pedantic, clippy::style, missing_docs)]
 
@@ -20,8 +25,6 @@ use std::{
     ptr::NonNull,
     sync::{Arc, Mutex, MutexGuard},
 };
-
-use eros::TypeSet;
 
 /// Hierarchical runtime dependency container
 pub struct Waypoint<'a>(Waypoint_<'a>);
@@ -246,7 +249,7 @@ impl Waypoint<'_> {
     /// - an existing value is found at the current node,
     /// - <code>&lt;T as [`Injectable`]>::[PROVISION_AT](`Injectable::PROVISION_AT`)></code> includes its [`Tag`],
     /// - the root is reached (at which point provisioning is attempted without [`Tag`]).
-    pub fn extract<T: ?Sized + Injectable>(&mut self) -> eros::Result<T::Provided, T::ErrorSet> {
+    pub fn extract<T: ?Sized + Injectable>(&mut self) -> Result<T::Provided, T::Error> {
         //TODO: This can be implemented iteratively. Somehow.
 
         let key = TypeId::of::<T>();
@@ -516,11 +519,8 @@ pub trait Injectable: 'static + Send + Sync {
     /// Often, this should be <code>[`Pin`]&lt;[`Arc`]&lt;Self>></code> or <code>[`Arc`]&lt;Self></code>.
     type Provided;
 
-    /// An [`eros::TypeSet`] that determines how and whether [`Waypoint::extract`] may fail due to a provisioning failure.
-    ///
-    /// Usually, this will likely be [`()`], [`eros::AnyError`] or a tuple of specific error types
-    /// that may occur in the returned [`eros::ErrorUnion`].
-    type ErrorSet: TypeSet;
+    /// An error that may occur when trying to auto-provision the injectable value.
+    type Error;
 
     /// Called to auto-provision `Self` (at a [`Waypoint`] with matched tag among [`Self::PROVISION_AT`] or the root [`Waypoint`]).
     ///
@@ -530,7 +530,7 @@ pub trait Injectable: 'static + Send + Sync {
     fn provision(
         at: &mut Waypoint<'_>,
         matched_tag: Option<TypeId>,
-    ) -> eros::Result<Pin<Arc<Self>>, Self::ErrorSet>;
+    ) -> Result<Pin<Arc<Self>>, Self::Error>;
 
     /// Derives the [`Self::Provided`] value from the provisioned value.
     fn provide(self: &Pin<Arc<Self>>) -> Self::Provided;

@@ -2,6 +2,3 @@
 name = "rhizome"
 version = "0.0.1"
 edition = "2024"
-
-[dependencies]
-eros = { version = "0.8.1", default-features = false }

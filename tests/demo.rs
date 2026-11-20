@@ -9,12 +9,12 @@ trait AnInjectable: Send + Sync {}
 impl Injectable for dyn AnInjectable {
     const PROVISION_AT: &'static [TypeId] = &[];
 
-    type ErrorSet = ();
+    type Error = !;
 
     fn provision(
         _at: &mut Waypoint<'_>,
         _matched_tag: Option<TypeId>,
-    ) -> eros::Result<Pin<Arc<Self>>, Self::ErrorSet> {
+    ) -> Result<Pin<Arc<Self>>, Self::Error> {
         struct Struct;
         impl AnInjectable for Struct {}
         Ok(Arc::pin(Struct))
