@@ -1,148 +1,382 @@
 //! Small ephemeral infallible-ish lifetime-liftable backtracing pinned-dependency injection.
 //!
-//! Prefer to pass only exclusive borrows around, as [`Waypoint`] is a few pointers wide.
+//! Prefer to pass only exclusive borrows around, as [`Waypoint`] is potentially large (depending on the [`Repository`] it is instantiated with).
 //!
 //! # Panic-safety
 //!
 //! rhizome never panics (or errors) on its own, except out of memory, and escalates panics (and errors)
-//! originating from [`Injectable::provision`] and inside [`Waypoint::provide_with`] strictly to the direct caller.
+//! originating from [`Injectable::provision`] strictly to the direct caller.
 //!
 //! # Notes
 //!
 //! The drop order *and granularity* of resources is not specified until all related [`Waypoint`]s have been dropped.
 //! Don't rely on it!
+//!
+//! There's no procedural provision API on [`Waypoint`], since it could easily lead to nondeterminism in conjunction with [`Future`]s.
+//!
+//! [`Repository`] is required to be `'static` because that simplifies lifting (but I'm open to suggestions).
+//!
+//! # TODO
+//!
+//! - A dynamically initialisable [`Repository`].
+//! - Support for larger tuples?
 
 #![warn(clippy::pedantic, clippy::style, missing_docs)]
 
 use std::{
     alloc::Layout,
     any::{Any, TypeId},
-    collections::{BTreeMap, btree_map::Entry},
+    collections::BTreeMap,
+    marker::PhantomData,
     mem::{self, ManuallyDrop, MaybeUninit},
-    ops::{Deref, DerefMut},
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     pin::Pin,
-    ptr::NonNull,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 
 /// Hierarchical runtime dependency container
-pub struct Waypoint<'a>(Waypoint_<'a>);
+#[repr(transparent)] //TODO: Check if using an explicit layout is necessary.
+pub struct Waypoint<'a, R: ?Sized>(Waypoint_<'a, R>);
 
-enum Waypoint_<'a> {
-    Inline(Inline<'a>),
+mod sealed {
+
+    use std::{any::TypeId, ffi::c_void, pin::Pin, sync::Arc};
+
+    use crate::Injectable;
+
+    pub(crate) unsafe trait Sealed {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>>;
+    }
+
+    unsafe impl<T: ?Sized + Sealed> Sealed for &'static T {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            <T as Sealed>::get(self, key)
+        }
+    }
+
+    unsafe impl<T: ?Sized + Injectable> Sealed for Pin<Arc<T>> {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            (key == TypeId::of::<T>()).then_some((&raw const *self).cast())
+        }
+    }
+
+    unsafe impl Sealed for () {
+        fn get(&self, _key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            None
+        }
+    }
+
+    unsafe impl<T0: ?Sized + Injectable> Sealed for (Pin<Arc<T0>>,) {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            (key == TypeId::of::<T0>()).then_some((&raw const self.0).cast())
+        }
+    }
+
+    unsafe impl<T0: ?Sized + Injectable, T1: ?Sized + Injectable> Sealed
+        for (Pin<Arc<T0>>, Pin<Arc<T1>>)
+    {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            Some(match key {
+                k if k == TypeId::of::<T0>() => (&raw const self.0).cast(),
+                k if k == TypeId::of::<T1>() => (&raw const self.1).cast(),
+                _ => return None,
+            })
+        }
+    }
+
+    unsafe impl<T0: ?Sized + Injectable, T1: ?Sized + Injectable, T2: ?Sized + Injectable> Sealed
+        for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>)
+    {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            Some(match key {
+                k if k == TypeId::of::<T0>() => (&raw const self.0).cast(),
+                k if k == TypeId::of::<T1>() => (&raw const self.1).cast(),
+                k if k == TypeId::of::<T2>() => (&raw const self.2).cast(),
+                _ => return None,
+            })
+        }
+    }
+
+    unsafe impl<
+        T0: ?Sized + Injectable,
+        T1: ?Sized + Injectable,
+        T2: ?Sized + Injectable,
+        T3: ?Sized + Injectable,
+    > Sealed for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>, Pin<Arc<T3>>)
+    {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            Some(match key {
+                k if k == TypeId::of::<T0>() => (&raw const self.0).cast(),
+                k if k == TypeId::of::<T1>() => (&raw const self.1).cast(),
+                k if k == TypeId::of::<T2>() => (&raw const self.2).cast(),
+                k if k == TypeId::of::<T3>() => (&raw const self.3).cast(),
+                _ => return None,
+            })
+        }
+    }
+
+    unsafe impl<
+        T0: ?Sized + Injectable,
+        T1: ?Sized + Injectable,
+        T2: ?Sized + Injectable,
+        T3: ?Sized + Injectable,
+        T4: ?Sized + Injectable,
+    > Sealed
+        for (
+            Pin<Arc<T0>>,
+            Pin<Arc<T1>>,
+            Pin<Arc<T2>>,
+            Pin<Arc<T3>>,
+            Pin<Arc<T4>>,
+        )
+    {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            Some(match key {
+                k if k == TypeId::of::<T0>() => (&raw const self.0).cast(),
+                k if k == TypeId::of::<T1>() => (&raw const self.1).cast(),
+                k if k == TypeId::of::<T2>() => (&raw const self.2).cast(),
+                k if k == TypeId::of::<T3>() => (&raw const self.3).cast(),
+                k if k == TypeId::of::<T4>() => (&raw const self.4).cast(),
+                _ => return None,
+            })
+        }
+    }
+
+    unsafe impl<
+        T0: ?Sized + Injectable,
+        T1: ?Sized + Injectable,
+        T2: ?Sized + Injectable,
+        T3: ?Sized + Injectable,
+        T4: ?Sized + Injectable,
+        T5: ?Sized + Injectable,
+    > Sealed
+        for (
+            Pin<Arc<T0>>,
+            Pin<Arc<T1>>,
+            Pin<Arc<T2>>,
+            Pin<Arc<T3>>,
+            Pin<Arc<T4>>,
+            Pin<Arc<T5>>,
+        )
+    {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            Some(match key {
+                k if k == TypeId::of::<T0>() => (&raw const self.0).cast(),
+                k if k == TypeId::of::<T1>() => (&raw const self.1).cast(),
+                k if k == TypeId::of::<T2>() => (&raw const self.2).cast(),
+                k if k == TypeId::of::<T3>() => (&raw const self.3).cast(),
+                k if k == TypeId::of::<T4>() => (&raw const self.4).cast(),
+                k if k == TypeId::of::<T5>() => (&raw const self.5).cast(),
+                _ => return None,
+            })
+        }
+    }
+
+    unsafe impl<
+        T0: ?Sized + Injectable,
+        T1: ?Sized + Injectable,
+        T2: ?Sized + Injectable,
+        T3: ?Sized + Injectable,
+        T4: ?Sized + Injectable,
+        T5: ?Sized + Injectable,
+        T6: ?Sized + Injectable,
+    > Sealed
+        for (
+            Pin<Arc<T0>>,
+            Pin<Arc<T1>>,
+            Pin<Arc<T2>>,
+            Pin<Arc<T3>>,
+            Pin<Arc<T4>>,
+            Pin<Arc<T5>>,
+            Pin<Arc<T6>>,
+        )
+    {
+        fn get(&self, key: TypeId) -> Option<*const Pin<Arc<c_void>>> {
+            Some(match key {
+                k if k == TypeId::of::<T0>() => (&raw const self.0).cast(),
+                k if k == TypeId::of::<T1>() => (&raw const self.1).cast(),
+                k if k == TypeId::of::<T2>() => (&raw const self.2).cast(),
+                k if k == TypeId::of::<T3>() => (&raw const self.3).cast(),
+                k if k == TypeId::of::<T4>() => (&raw const self.4).cast(),
+                k if k == TypeId::of::<T5>() => (&raw const self.5).cast(),
+                k if k == TypeId::of::<T6>() => (&raw const self.6).cast(),
+                _ => return None,
+            })
+        }
+    }
+}
+use sealed::Sealed;
+
+/// Marker trait for types that can act as node repositories.
+#[expect(private_bounds)]
+pub trait Repository: 'static + Sealed {}
+
+impl Repository for () {}
+impl<T: ?Sized + Repository> Repository for &'static T {}
+
+impl<T: ?Sized + Injectable> Repository for Pin<Arc<T>> {}
+
+impl<T0: ?Sized + Injectable> Repository for (Pin<Arc<T0>>,) {}
+
+impl<T0: ?Sized + Injectable, T1: ?Sized + Injectable> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>) {}
+
+impl<T0: ?Sized + Injectable, T1: ?Sized + Injectable, T2: ?Sized + Injectable> Repository
+    for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>)
+{
+}
+
+impl<
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
+    T2: ?Sized + Injectable,
+    T3: ?Sized + Injectable,
+> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>, Pin<Arc<T3>>)
+{
+}
+
+impl<
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
+    T2: ?Sized + Injectable,
+    T3: ?Sized + Injectable,
+    T4: ?Sized + Injectable,
+> Repository
+    for (
+        Pin<Arc<T0>>,
+        Pin<Arc<T1>>,
+        Pin<Arc<T2>>,
+        Pin<Arc<T3>>,
+        Pin<Arc<T4>>,
+    )
+{
+}
+
+impl<
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
+    T2: ?Sized + Injectable,
+    T3: ?Sized + Injectable,
+    T4: ?Sized + Injectable,
+    T5: ?Sized + Injectable,
+> Repository
+    for (
+        Pin<Arc<T0>>,
+        Pin<Arc<T1>>,
+        Pin<Arc<T2>>,
+        Pin<Arc<T3>>,
+        Pin<Arc<T4>>,
+        Pin<Arc<T5>>,
+    )
+{
+}
+
+impl<
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
+    T2: ?Sized + Injectable,
+    T3: ?Sized + Injectable,
+    T4: ?Sized + Injectable,
+    T5: ?Sized + Injectable,
+    T6: ?Sized + Injectable,
+> Repository
+    for (
+        Pin<Arc<T0>>,
+        Pin<Arc<T1>>,
+        Pin<Arc<T2>>,
+        Pin<Arc<T3>>,
+        Pin<Arc<T4>>,
+        Pin<Arc<T5>>,
+        Pin<Arc<T6>>,
+    )
+{
+}
+
+#[repr(C)]
+enum Waypoint_<'a, R: ?Sized> {
+    Inline(Inline<'a, R>),
     Lifted(Arc<Mutex<Lifted>>),
 }
 
-struct Inline<'a> {
+#[repr(C)]
+struct Inline<'a, R: ?Sized> {
     next: InlineNext<'a>,
-    managed: BTreeMap<TypeId, Raw>,
     tag: TypeId,
+    provisioned: Option<Box<BTreeMap<TypeId, Raw>>>,
+    //FIXME: Use static dispatch and unsize this struct inline once that's possible.
+    repository: Box<dyn Repository>,
+    _phantom: PhantomData<R>,
 }
 
 struct Lifted {
     next: Option<Arc<Mutex<Lifted>>>,
-    managed: BTreeMap<TypeId, Raw>,
     tag: TypeId,
+    provisioned: Option<Box<BTreeMap<TypeId, Raw>>>,
+    repository: Box<dyn Repository>, //FIXME: Will be able to be `R`.
 }
 
-impl Waypoint<'static> {
+impl<R: Repository> Waypoint<'static, R> {
     /// Creates a new [`Waypoint`] hierarchy.
-    pub fn new_root<T: ?Sized + Tag>() -> Self {
-        Self(Waypoint_::Inline(Inline {
+    pub fn new_root<T: ?Sized + Tag>(repository: R) -> Self {
+        Self(Waypoint_::Inline(Inline::<R> {
             next: InlineNext::None,
-            managed: BTreeMap::new(),
             tag: TypeId::of::<T>(),
+            provisioned: None,
+            repository: Box::new(repository),
+            _phantom: PhantomData,
         }))
     }
 }
 
-enum DerefEither<Left, Right> {
-    Left(Left),
-    Right(Right),
-}
-
-impl<L, R> Deref for DerefEither<L, R>
-where
-    L: Deref,
-    R: Deref<Target = L::Target>,
-{
-    type Target = L::Target;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            DerefEither::Left(left) => left,
-            DerefEither::Right(right) => right,
-        }
-    }
-}
-
-impl<L, R> DerefMut for DerefEither<L, R>
-where
-    L: DerefMut,
-    R: DerefMut<Target = L::Target>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            DerefEither::Left(left) => left,
-            DerefEither::Right(right) => right,
-        }
-    }
-}
-
-/// # Safety
-///
-/// `projected` must remain valid for `'a`.
-unsafe fn projected<'a, T: ?Sized, U: ?Sized>(
-    guard: MutexGuard<'a, T>,
-    projected: NonNull<U>,
-) -> impl DerefMut<Target = U> {
-    struct Projection<'a, T: ?Sized, U: ?Sized>(MutexGuard<'a, T>, NonNull<U>);
-
-    impl<'a, T: ?Sized, U: ?Sized> Deref for Projection<'a, T, U> {
-        type Target = U;
-
-        fn deref(&self) -> &Self::Target {
-            unsafe { self.1.as_ref() }
-        }
-    }
-
-    impl<'a, T: ?Sized, U: ?Sized> DerefMut for Projection<'a, T, U> {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            unsafe { self.1.as_mut() }
-        }
-    }
-
-    Projection(guard, projected)
-}
-
-impl Waypoint<'_> {
+impl<R: ?Sized> Waypoint<'_, R> {
     /// Creates a new linked [`Waypoint`] falling back to `self`.
-    pub fn new<T: ?Sized + Tag>(&mut self) -> Waypoint<'_> {
+    pub fn new<T: ?Sized + Tag, R2>(&mut self, repository: R2) -> Waypoint<'_, R2>
+    where
+        R: Repository,
+        R2: Repository,
+    {
         Waypoint(Waypoint_::Inline(Inline {
-            next: InlineNext::Waypoint(unsafe { mem::transmute(self) }),
-            managed: BTreeMap::new(),
+            next: InlineNext::Waypoint(unsafe {
+                mem::transmute::<&mut Waypoint<R>, &mut Waypoint<dyn Repository>>(self)
+            }),
             tag: TypeId::of::<T>(),
+            provisioned: None,
+            repository: Box::new(repository),
+            _phantom: PhantomData,
         }))
     }
 
     /// Creates a new `'static` [`Waypoint`] falling back to `self`'s state.
     ///
     /// This is potentially expensive (with persistent but idempotent effect on all ancestors).
-    pub fn lift_and_new<T: ?Sized + Tag>(&mut self) -> Waypoint<'static> {
+    pub fn lift_and_new<T: ?Sized + Tag, R2>(&mut self, repository: R2) -> Waypoint<'static, R2>
+    where
+        R: Repository,
+        R2: Repository,
+    {
         Waypoint(Waypoint_::Inline(Inline {
             next: InlineNext::Lifted(match &self.0 {
                 Waypoint_::Lifted(lifted) => Arc::clone(lifted),
                 Waypoint_::Inline(_) => self.lift(),
             }),
-            managed: BTreeMap::new(),
             tag: TypeId::of::<T>(),
+            provisioned: None,
+            repository: Box::new(repository),
+            _phantom: PhantomData,
         }))
     }
 
-    fn lift(&mut self) -> Arc<Mutex<Lifted>> {
+    fn lift(&mut self) -> Arc<Mutex<Lifted>>
+    where
+        R: Repository,
+    {
         match &mut self.0 {
-            Waypoint_::Inline(Inline { next, managed, tag }) => {
+            Waypoint_::Inline(Inline {
+                next,
+                tag,
+                provisioned,
+                repository,
+                _phantom: _,
+            }) => {
                 let mut uninit = Arc::new_uninit();
                 let mutex = Mutex::new(Lifted {
                     next: match next {
@@ -150,8 +384,9 @@ impl Waypoint<'_> {
                         InlineNext::Lifted(_) => unreachable!("Lifting is transitive."),
                         InlineNext::None => None,
                     },
-                    managed: mem::take(managed),
                     tag: *tag,
+                    provisioned: provisioned.take(),
+                    repository: mem::replace(repository, Box::new(())),
                 });
                 let lifted = unsafe {
                     Arc::get_mut(&mut uninit)
@@ -166,82 +401,6 @@ impl Waypoint<'_> {
         }
     }
 
-    /// Iff not locally occupied,
-    /// provides `value` for extractions of `T` at `self`
-    /// and (where not shadowed) its children.
-    pub fn provide<T: ?Sized + Injectable>(
-        &mut self,
-        value: Pin<Arc<T>>,
-    ) -> Result<Pin<impl DerefMut<Target = T>>, Pin<Arc<T>>> {
-        match &mut self.0 {
-            Waypoint_::Inline(inline) => {
-                let Entry::Vacant(entry) = inline.managed.entry(TypeId::of::<T>()) else {
-                    return Err(value);
-                };
-                Ok({
-                    let raw = entry.insert(value.into());
-                    unsafe {
-                        Pin::new_unchecked(DerefEither::Left(Pin::into_inner_unchecked(
-                            raw.as_mut::<T>(),
-                        )))
-                    }
-                })
-            }
-            Waypoint_::Lifted(lifted) => {
-                let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
-                let Entry::Vacant(entry) = guard.managed.entry(TypeId::of::<T>()) else {
-                    return Err(value);
-                };
-                Ok({
-                    let raw = entry.insert(value.into());
-                    unsafe {
-                        let ptr = raw.as_mut_ptr();
-                        Pin::new_unchecked(DerefEither::Right(projected(guard, ptr)))
-                    }
-                })
-            }
-        }
-    }
-
-    /// Iff not locally occupied,
-    /// provides the return value of `make_value` for extractions of `T` at `self`
-    /// and (where not shadowed) its children.
-    pub fn provide_with<T: ?Sized + Injectable, F: FnOnce() -> Pin<Arc<T>>>(
-        &mut self,
-        make_value: F,
-    ) -> Result<Pin<impl DerefMut<Target = T>>, F> {
-        match &mut self.0 {
-            Waypoint_::Inline(inline) => {
-                let Entry::Vacant(entry) = inline.managed.entry(TypeId::of::<T>()) else {
-                    return Err(make_value);
-                };
-                Ok({
-                    let raw = entry.insert(make_value().into());
-                    unsafe {
-                        Pin::new_unchecked(DerefEither::Left(Pin::into_inner_unchecked(
-                            raw.as_mut::<T>(),
-                        )))
-                    }
-                })
-            }
-            Waypoint_::Lifted(lifted) => {
-                let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
-                let Entry::Vacant(entry) = guard.managed.entry(TypeId::of::<T>()) else {
-                    return Err(make_value);
-                };
-                Ok({
-                    let raw = entry.insert(make_value().into());
-                    unsafe {
-                        let ptr = raw.as_mut_ptr();
-                        Pin::new_unchecked(DerefEither::Right(projected(guard, ptr)))
-                    }
-                })
-            }
-        }
-    }
-
-    //TODO: Add typestate so that branching can only happen after provision.
-
     /// Extracts a resource keyed with *exact* `T`.
     ///
     /// This method visits this and parent [`Waypoint`] data until (from highest to lowest priority)
@@ -249,13 +408,27 @@ impl Waypoint<'_> {
     /// - an existing value is found at the current node,
     /// - <code>&lt;T as [`Injectable`]>::[PROVISION_AT](`Injectable::PROVISION_AT`)></code> includes its [`Tag`],
     /// - the root is reached (at which point provisioning is attempted without [`Tag`]).
-    pub fn extract<T: ?Sized + Injectable>(&mut self) -> Result<T::Provided, T::Error> {
+    pub fn extract<T: ?Sized + Injectable>(&mut self) -> Result<T::Provided, T::Error>
+    where
+        R: Repository,
+    {
         //TODO: This can be implemented iteratively. Somehow.
 
         let key = TypeId::of::<T>();
         match &mut self.0 {
-            Waypoint_::Inline(Inline { next, managed, tag }) => {
-                if let Some(raw) = managed.get(&key) {
+            Waypoint_::Inline(Inline {
+                next,
+                tag,
+                provisioned,
+                repository,
+                _phantom: _,
+            }) => {
+                if let Some(ptr) = repository.get(key) {
+                    // Found
+                    Ok(unsafe { T::provide(&*ptr.cast()) })
+                } else if let Some(provisioned) = provisioned
+                    && let Some(raw) = provisioned.get(&key)
+                {
                     // Found
                     Ok(unsafe { T::provide(&raw.to_virtual_arc()) })
                 } else if T::PROVISION_AT.contains(tag) {
@@ -266,7 +439,8 @@ impl Waypoint<'_> {
                         Waypoint_::Inline(inline) => Ok(unsafe {
                             T::provide(
                                 &inline
-                                    .managed
+                                    .provisioned
+                                    .get_or_insert_default()
                                     .entry(key)
                                     .insert_entry(raw)
                                     .get()
@@ -278,7 +452,8 @@ impl Waypoint<'_> {
                                 &lifted
                                     .lock()
                                     .unwrap_or_else(|_| unreachable!())
-                                    .managed
+                                    .provisioned
+                                    .get_or_insert_default()
                                     .entry(key)
                                     .insert_entry(raw)
                                     .get()
@@ -291,7 +466,8 @@ impl Waypoint<'_> {
                     match next {
                         InlineNext::Waypoint(waypoint) => waypoint.extract::<T>(),
                         InlineNext::Lifted(lifted) => {
-                            Waypoint(Waypoint_::Lifted(Arc::clone(lifted))).extract::<T>()
+                            Waypoint(Waypoint_::<dyn Repository>::Lifted(Arc::clone(lifted)))
+                                .extract::<T>()
                         }
                         InlineNext::None => {
                             let raw = T::provision(self, None)?.into();
@@ -299,7 +475,8 @@ impl Waypoint<'_> {
                                 Waypoint_::Inline(inline) => Ok(unsafe {
                                     T::provide(
                                         &inline
-                                            .managed
+                                            .provisioned
+                                            .get_or_insert_default()
                                             .entry(key)
                                             .insert_entry(raw)
                                             .get()
@@ -311,7 +488,8 @@ impl Waypoint<'_> {
                                         &lifted
                                             .lock()
                                             .unwrap_or_else(|_| unreachable!())
-                                            .managed
+                                            .provisioned
+                                            .get_or_insert_default()
                                             .entry(key)
                                             .insert_entry(raw)
                                             .get()
@@ -326,14 +504,24 @@ impl Waypoint<'_> {
             Waypoint_::Lifted(lifted) => {
                 let mut guard = lifted.lock().unwrap_or_else(|_| unreachable!());
                 let result = catch_unwind(AssertUnwindSafe(|| {
-                    let Lifted { next, managed, tag } = &mut *guard;
-                    if let Some(raw) = managed.get(&key) {
+                    let Lifted {
+                        next,
+                        tag,
+                        provisioned,
+                        repository,
+                    } = &mut *guard;
+                    if let Some(ptr) = repository.get(key) {
+                        // Found
+                        Ok(unsafe { T::provide(&*ptr.cast()) })
+                    } else if let Some(provisioned) = provisioned
+                        && let Some(raw) = provisioned.get(&key)
+                    {
                         // Found
                         Ok(unsafe { T::provide(&raw.to_virtual_arc()) })
                     } else if T::PROVISION_AT.contains(tag) {
                         // Tag match
                         let raw: Raw = T::provision(
-                            &mut Waypoint(Waypoint_::Lifted(Arc::clone(&lifted))),
+                            &mut Waypoint(Waypoint_::<dyn Repository>::Lifted(Arc::clone(&lifted))),
                             Some(*tag),
                         )?
                         .into();
@@ -342,7 +530,8 @@ impl Waypoint<'_> {
                                 &lifted
                                     .lock()
                                     .unwrap_or_else(|_| unreachable!())
-                                    .managed
+                                    .provisioned
+                                    .get_or_insert_default()
                                     .entry(key)
                                     .insert_entry(raw)
                                     .get()
@@ -353,11 +542,14 @@ impl Waypoint<'_> {
                         // Next
                         match next {
                             Some(lifted) => {
-                                Waypoint(Waypoint_::Lifted(Arc::clone(lifted))).extract::<T>()
+                                Waypoint(Waypoint_::<dyn Repository>::Lifted(Arc::clone(lifted)))
+                                    .extract::<T>()
                             }
                             None => {
                                 let raw = T::provision(
-                                    &mut Waypoint(Waypoint_::Lifted(Arc::clone(lifted))),
+                                    &mut Waypoint(Waypoint_::<dyn Repository>::Lifted(Arc::clone(
+                                        lifted,
+                                    ))),
                                     None,
                                 )?
                                 .into();
@@ -366,7 +558,8 @@ impl Waypoint<'_> {
                                         &lifted
                                             .lock()
                                             .unwrap_or_else(|_| unreachable!())
-                                            .managed
+                                            .provisioned
+                                            .get_or_insert_default()
                                             .entry(key)
                                             .insert_entry(raw)
                                             .get()
@@ -385,7 +578,7 @@ impl Waypoint<'_> {
 }
 
 enum InlineNext<'a> {
-    Waypoint(&'a mut Waypoint<'a>),
+    Waypoint(&'a mut Waypoint<'a, dyn Repository>),
     Lifted(Arc<Mutex<Lifted>>),
     None,
 }
@@ -461,37 +654,6 @@ impl<T: ?Sized + Injectable> From<Pin<Arc<T>>> for Raw {
 impl Raw {
     /// # Safety
     ///
-    /// - `Self` must have been converted from a `Pin<Arc<T>>`
-    /// - that is being held exclusively.
-    unsafe fn as_mut<T: ?Sized + Injectable>(&mut self) -> Pin<&mut T> {
-        unsafe {
-            let mut arc =
-                ManuallyDrop::new(Arc::from_raw(self.0.as_ptr().cast::<*const T>().read()));
-            let Some(borrow) = Arc::get_mut(&mut arc) else {
-                unreachable!();
-            };
-            let borrow = Pin::new_unchecked(&mut *&raw mut *borrow);
-            borrow
-        }
-    }
-
-    /// # Safety
-    ///
-    /// - `Self` must have been converted from a `Pin<Arc<T>>`
-    /// - that is being held exclusively.
-    unsafe fn as_mut_ptr<T: ?Sized + Injectable>(&mut self) -> NonNull<T> {
-        unsafe {
-            let mut arc =
-                ManuallyDrop::new(Arc::from_raw(self.0.as_ptr().cast::<*const T>().read()));
-            let Some(borrow) = Arc::get_mut(&mut arc) else {
-                unreachable!();
-            };
-            NonNull::from_mut(borrow)
-        }
-    }
-
-    /// # Safety
-    ///
     /// The resulting [`Arc`] must not be dropped.
     unsafe fn to_virtual_arc<T: ?Sized + Injectable>(&self) -> ManuallyDrop<Pin<Arc<T>>> {
         unsafe {
@@ -528,7 +690,7 @@ pub trait Injectable: 'static + Send + Sync {
     /// the outermost on "wins" and inner instances are successively released.\
     /// (This circumstance may raise a panic in future incompatible versions.)
     fn provision(
-        at: &mut Waypoint<'_>,
+        at: &mut Waypoint<'_, impl ?Sized + Repository>,
         matched_tag: Option<TypeId>,
     ) -> Result<Pin<Arc<Self>>, Self::Error>;
 
