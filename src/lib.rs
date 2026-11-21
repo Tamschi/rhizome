@@ -20,6 +20,7 @@
 //!
 //! - A dynamically initialisable [`Repository`].
 //! - Support for larger tuples?
+//! - Assertion that types in tuple [`Repository`]s are distinct.
 
 #![warn(clippy::pedantic, clippy::style, missing_docs)]
 
