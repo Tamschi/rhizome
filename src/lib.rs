@@ -208,39 +208,48 @@ mod sealed {
 use sealed::Sealed;
 
 /// Marker trait for types that can act as node repositories.
+///
+/// This is currently implemented for only a limited set of types,
+/// but should be expanded in the future.
 #[expect(private_bounds)]
 pub trait Repository: 'static + Sealed {}
 
+/// Empty.
 impl Repository for () {}
+
+/// Useful for singletons.
 impl<T: ?Sized + Repository> Repository for &'static T {}
 
+/// Identity.
 impl<T: ?Sized + Injectable> Repository for Pin<Arc<T>> {}
 
-impl<T0: ?Sized + Injectable> Repository for (Pin<Arc<T0>>,) {}
+impl<T0> Repository for (Pin<Arc<T0>>,) where T0: ?Sized + Injectable {}
 
-impl<T0: ?Sized + Injectable, T1: ?Sized + Injectable> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>) {}
-
-impl<T0: ?Sized + Injectable, T1: ?Sized + Injectable, T2: ?Sized + Injectable> Repository
-    for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>)
+impl<T0, T1> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>)
+where
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
 {
 }
 
-impl<
+impl<T0, T1, T2> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>)
+where
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
+    T2: ?Sized + Injectable,
+{
+}
+
+impl<T0, T1, T2, T3> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>, Pin<Arc<T3>>)
+where
     T0: ?Sized + Injectable,
     T1: ?Sized + Injectable,
     T2: ?Sized + Injectable,
     T3: ?Sized + Injectable,
-> Repository for (Pin<Arc<T0>>, Pin<Arc<T1>>, Pin<Arc<T2>>, Pin<Arc<T3>>)
 {
 }
 
-impl<
-    T0: ?Sized + Injectable,
-    T1: ?Sized + Injectable,
-    T2: ?Sized + Injectable,
-    T3: ?Sized + Injectable,
-    T4: ?Sized + Injectable,
-> Repository
+impl<T0, T1, T2, T3, T4> Repository
     for (
         Pin<Arc<T0>>,
         Pin<Arc<T1>>,
@@ -248,17 +257,16 @@ impl<
         Pin<Arc<T3>>,
         Pin<Arc<T4>>,
     )
-{
-}
-
-impl<
+where
     T0: ?Sized + Injectable,
     T1: ?Sized + Injectable,
     T2: ?Sized + Injectable,
     T3: ?Sized + Injectable,
     T4: ?Sized + Injectable,
-    T5: ?Sized + Injectable,
-> Repository
+{
+}
+
+impl<T0, T1, T2, T3, T4, T5> Repository
     for (
         Pin<Arc<T0>>,
         Pin<Arc<T1>>,
@@ -267,18 +275,17 @@ impl<
         Pin<Arc<T4>>,
         Pin<Arc<T5>>,
     )
-{
-}
-
-impl<
+where
     T0: ?Sized + Injectable,
     T1: ?Sized + Injectable,
     T2: ?Sized + Injectable,
     T3: ?Sized + Injectable,
     T4: ?Sized + Injectable,
     T5: ?Sized + Injectable,
-    T6: ?Sized + Injectable,
-> Repository
+{
+}
+
+impl<T0, T1, T2, T3, T4, T5, T6> Repository
     for (
         Pin<Arc<T0>>,
         Pin<Arc<T1>>,
@@ -288,6 +295,14 @@ impl<
         Pin<Arc<T5>>,
         Pin<Arc<T6>>,
     )
+where
+    T0: ?Sized + Injectable,
+    T1: ?Sized + Injectable,
+    T2: ?Sized + Injectable,
+    T3: ?Sized + Injectable,
+    T4: ?Sized + Injectable,
+    T5: ?Sized + Injectable,
+    T6: ?Sized + Injectable,
 {
 }
 
